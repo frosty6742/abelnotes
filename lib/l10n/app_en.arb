@@ -330,6 +330,8 @@
   "setPencilDoubleTapSub": "Double-tap the Apple Pencil to switch between pen and eraser",
   "setFillShapes": "Fill shapes",
   "setFillShapesSub": "Recognized circles, rectangles and triangles get a light tint of the ink color",
+  "setTapUndo": "Finger tap to undo",
+  "setTapUndoSub": "Tap with two fingers to undo, three to redo",
   "setSyncConnectedDesc": "Connected to a WebDAV server. Notebooks sync across all your devices.",
   "setSyncLocalOnlyDesc": "Local-only mode: notebooks stay on this device. Connect a WebDAV server to access them from multiple devices.",
   "setSyncWebdav": "WebDAV",
