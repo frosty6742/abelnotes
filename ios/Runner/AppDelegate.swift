@@ -41,6 +41,103 @@ import Vision
         ])
       }
     }
+
+    // Apple Pencil double-tap and squeeze. See
+    // lib/core/services/apple_pencil_channel.dart.
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "PencilGestures") {
+      let channel = FlutterMethodChannel(
+        name: "abelnotes/pencil",
+        binaryMessenger: registrar.messenger())
+      PencilGestures.shared.channel = channel
+      channel.setMethodCallHandler { call, result in
+        guard call.method == "attach" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        PencilGestures.shared.attach()
+        result(nil)
+      }
+    }
+  }
+}
+
+/// Hears the double-tap on Apple Pencil (2nd generation, Pro) and the
+/// squeeze on Apple Pencil Pro, and tells the canvas, with what the user
+/// picked for each in Settings → Apple Pencil so the app can honour it, and
+/// where the Pencil hovers when it knows (iOS 17.5+, in the Flutter view's
+/// points, which are Flutter's logical pixels). Attached when the canvas
+/// asks: by then the Flutter view is in the key window.
+final class PencilGestures: NSObject, UIPencilInteractionDelegate {
+  static let shared = PencilGestures()
+
+  var channel: FlutterMethodChannel?
+  private var interaction: UIPencilInteraction?
+
+  func attach() {
+    guard interaction == nil, let view = rootView() else { return }
+    let pencil = UIPencilInteraction()
+    pencil.delegate = self
+    view.addInteraction(pencil)
+    interaction = pencil
+  }
+
+  private func rootView() -> UIView? {
+    UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .first { $0.isKeyWindow }?
+      .rootViewController?.view
+  }
+
+  // Up to iOS 17.4; 17.5 calls the method below instead.
+  func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+    report("doubleTap", UIPencilInteraction.preferredTapAction, at: nil)
+  }
+
+  @available(iOS 17.5, *)
+  func pencilInteraction(_ interaction: UIPencilInteraction,
+                         didReceiveTap tap: UIPencilInteraction.Tap) {
+    report("doubleTap", UIPencilInteraction.preferredTapAction,
+           at: tap.hoverPose?.location)
+  }
+
+  // The squeeze runs from .began to .ended; act once, on release.
+  @available(iOS 17.5, *)
+  func pencilInteraction(_ interaction: UIPencilInteraction,
+                         didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+    guard squeeze.phase == .ended else { return }
+    report("squeeze", UIPencilInteraction.preferredSqueezeAction,
+           at: squeeze.hoverPose?.location)
+  }
+
+  private func report(_ gesture: String, _ preferred: UIPencilPreferredAction,
+                      at location: CGPoint?) {
+    var args: [String: Any] = ["action": PencilGestures.name(of: preferred)]
+    if let location = location {
+      args["x"] = Double(location.x)
+      args["y"] = Double(location.y)
+    }
+    channel?.invokeMethod(gesture, arguments: args)
+  }
+
+  private static func name(of action: UIPencilPreferredAction) -> String {
+    switch action {
+    case .switchEraser: return "switchEraser"
+    case .switchPrevious: return "switchPrevious"
+    case .showColorPalette: return "showColorPalette"
+    case .ignore: return "ignore"
+    default: break
+    }
+    if #available(iOS 17.5, *) {
+      switch action {
+      case .showInkAttributes: return "showInkAttributes"
+      case .showContextualPalette: return "showContextualPalette"
+      // The system runs the shortcut itself.
+      case .runSystemShortcut: return "runSystemShortcut"
+      default: break
+      }
+    }
+    return "other"
   }
 }
 
