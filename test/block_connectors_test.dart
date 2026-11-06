@@ -344,4 +344,58 @@ void main() {
     expect(arrow.elbow, 'v');
     expect(connectorRoute(arrow).first.dx, closeTo(connectorRoute(arrow).last.dx, 0.5));
   });
+  test('starting from an arrow: a block placed on its tip is attached and sits ahead of it', () {
+    const arrowRight = ContentElement.shape(
+        id: 'r',
+        zIndex: 0,
+        data: ShapeData(shapeType: 'arrow', x1: 0, y1: 100, x2: 44, y2: 100));
+    n.state = _state([arrowRight], null);
+    n.state = n.state!.copyWith(selectedElementId: 'r');
+    expect(n.canAddBlockAtConnector('r', atEnd: true), isTrue);
+    expect(n.canAddBlockAtConnector('r', atEnd: false), isTrue);
+    final block = blockDiagramBlocks().firstWhere((s) => s.id.endsWith('-block'));
+    n.addBlockAtConnector('r', block, atEnd: true);
+    final st = n.state!;
+    final arrow = _shape(st, 'r');
+    expect(arrow.endId, st.selectedElementId); // attached, and selected for chaining
+    expect(arrow.startId, isNull); // the start is still free
+    final body = _shape(st, st.selectedElementId!);
+    expect(body.x1, greaterThan(40)); // ahead of the tip, not behind it
+    expect(arrow.x2, closeTo(body.x1, 2)); // the tip meets the block's near side
+    expect(n.canAddBlockAtConnector('r', atEnd: true), isFalse); // that end is taken
+    expect(n.canAddBlockAtConnector('r', atEnd: false), isTrue);
+  });
+
+  test('a block at the arrow start goes behind it, and a downward arrow gets one below', () {
+    const down = ContentElement.shape(
+        id: 'd',
+        zIndex: 0,
+        data: ShapeData(shapeType: 'arrow', x1: 50, y1: 0, x2: 50, y2: 44));
+    n.state = _state([down], null);
+    final block = blockDiagramBlocks().firstWhere((s) => s.id.endsWith('-block'));
+    n.addBlockAtConnector('d', block, atEnd: true);
+    var body = _shape(n.state!, n.state!.selectedElementId!);
+    expect(body.y1, greaterThan(40)); // below the tip
+    n.addBlockAtConnector('d', block, atEnd: false);
+    body = _shape(n.state!, n.state!.selectedElementId!);
+    expect(body.y2, lessThan(5)); // above the start
+  });
+  test('an empty arrow off a block is attached at its start, free at the tip, and selected', () {
+    n.state = _state([_box('a', 0, 0)], null); // 100 x 50
+    n.state = n.state!.copyWith(selectedElementId: 'a');
+    n.chainSelection(const Offset(1, 0), arrowOnly: true);
+    final st = n.state!;
+    expect(st.currentPage!.layers.content.length, 2); // no extra block
+    final arrowId = st.selectedElementId!;
+    final arrow = _shape(st, arrowId);
+    expect(arrow.shapeType, 'arrow');
+    expect(arrow.startId, 'a');
+    expect(arrow.endId, isNull);
+    expect(arrow.x1, closeTo(100, 2)); // leaves a's right side
+    expect(arrow.x2, greaterThan(arrow.x1 + 20)); // pointing right, tip free
+    expect(n.canAddBlockAtConnector(arrowId, atEnd: true), isTrue);
+    // ...and the tip can then take a block, which finishes the chain.
+    n.addBlockAtConnector(arrowId, blockDiagramBlocks().first, atEnd: true);
+    expect(_shape(n.state!, arrowId).endId, n.state!.selectedElementId);
+  });
 }

@@ -4336,11 +4336,16 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
   /// (e.g. `Offset(1, 0)` = right), joins the two with an attached arrow and
   /// selects the copy, so repeating it lays out a row. By default the copy is
   /// a clone, so it keeps whatever size the block was resized to; [symbol]
-  /// places that block type instead. Either way it is drawn in the
+  /// places that block type instead, and [arrowOnly] just leaves an empty
+  /// arrow (attached to the block, far end free) to be finished later. Either way it is drawn in the
   /// current pen colour so a mid-diagram colour change carries on.
-  void chainSelection(Offset dir, {ReusableSymbol? symbol}) {
+  void chainSelection(Offset dir, {ReusableSymbol? symbol, bool arrowOnly = false}) {
     final cur = _currentSelection();
     if (state == null || cur == null || !cur.$1.any(isBlockBody)) return;
+    if (arrowOnly) {
+      _addArrowFromBlock(cur.$1.firstWhere(isBlockBody), dir);
+      return;
+    }
     final s = state!;
     final (originals, selBounds) = cur;
     final page = s.currentPage!;
@@ -4387,22 +4392,8 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
 
     final baseZ = _nextZIndex(page);
     final pen = s.toolSettings.color;
-    final copies = remapConnectors(base, [
-      for (var i = 0; i < placed.length; i++)
-        tintElement(placed[i], pen).map(
-          unknown: (u) => u.copyWith(id: const Uuid().v4(), zIndex: baseZ + i),
-          stroke: (e) => ContentElement.stroke(
-              id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
-          text: (e) => ContentElement.text(
-              id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
-          image: (e) => ContentElement.image(
-              id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
-          shape: (e) => ContentElement.shape(
-              id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
-          math: (e) => ContentElement.math(
-              id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
-        )
-    ]);
+    final copies = remapConnectors(base,
+        _freshCopies([for (final e in placed) tintElement(e, pen)], baseZ));
     final bodyCopy = copies[bodyIdx];
     final arrow = ContentElement.shape(
       id: const Uuid().v4(),
@@ -4445,6 +4436,157 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
           : LassoSelection(
               selectedIds: copyIds, bounds: newBounds),
       clearLasso: s.lassoSelection == null,
+    );
+  }
+
+  /// An empty arrow leaving [body] on the side [dir] points to. Its start is
+  /// attached to the block, its tip is free; it is selected so a block can be
+  /// put on the tip next ([addBlockAtConnector]).
+  void _addArrowFromBlock(ContentElement body, Offset dir) {
+    final s = state;
+    final page = s?.currentPage;
+    final box = _getElementBounds(body);
+    if (s == null || page == null || box == null) return;
+    const length = 28.0;
+    final start = Offset(box.center.dx + dir.dx * box.width / 2,
+        box.center.dy + dir.dy * box.height / 2);
+    final end = start + dir * length;
+    final arrow = ContentElement.shape(
+      id: const Uuid().v4(),
+      zIndex: _nextZIndex(page),
+      data: ShapeData(
+        shapeType: 'arrow',
+        x1: start.dx, y1: start.dy, x2: end.dx, y2: end.dy,
+        strokeColor: s.toolSettings.color,
+        strokeWidth: body.mapOrNull(
+                shape: (b) => b.data.strokeWidth,
+                stroke: (b) => b.data.baseWidth) ??
+            2.0,
+        startId: elementId(body),
+      ),
+    );
+    final undoStack = _pushUndo(s, s.currentPageFileName, page);
+    final content =
+        _snapConnectors([...page.layers.content, arrow], {elementId(body)});
+    final updatedPages = Map<String, PageData>.from(s.pages);
+    updatedPages[s.currentPageFileName] = carryPdfTextLayer(page, PageData(
+      pageId: page.pageId, pageNumber: page.pageNumber,
+      width: page.width, height: page.height,
+      layers: RenderingLayers(background: page.layers.background, content: content),
+      assetReferences: page.assetReferences,
+      createdAt: page.createdAt, modifiedAt: DateTime.now(),
+    ));
+    state = s.copyWith(
+      pages: updatedPages,
+      undoStack: undoStack,
+      redoStack: [],
+      isDirty: true,
+      selectedElementId: elementId(arrow),
+      clearLasso: true,
+    );
+  }
+
+  /// [els] re-issued with new ids and consecutive z-indexes from [baseZ].
+  List<ContentElement> _freshCopies(List<ContentElement> els, int baseZ) => [
+        for (var i = 0; i < els.length; i++)
+          els[i].map(
+            unknown: (u) => u.copyWith(id: const Uuid().v4(), zIndex: baseZ + i),
+            stroke: (e) => ContentElement.stroke(
+                id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
+            text: (e) => ContentElement.text(
+                id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
+            image: (e) => ContentElement.image(
+                id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
+            shape: (e) => ContentElement.shape(
+                id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
+            math: (e) => ContentElement.math(
+                id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
+          )
+      ];
+
+  ShapeData? _connector(String id) {
+    final page = state?.currentPage;
+    if (page == null) return null;
+    for (final e in page.layers.content) {
+      if (elementId(e) != id) continue;
+      final d = e.mapOrNull(shape: (x) => x.data);
+      return d != null && isConnector(d) ? d : null;
+    }
+    return null;
+  }
+
+  /// True when [id] is an arrow/line whose [atEnd] (tip) or start end has no
+  /// block attached yet, so a block can be put there.
+  bool canAddBlockAtConnector(String id, {required bool atEnd}) {
+    final d = _connector(id);
+    return d != null && (atEnd ? d.endId : d.startId) == null;
+  }
+
+  /// Starting a diagram from an arrow: puts [symbol] on the free end of the
+  /// arrow [id] — on the side it points to (or, for the start, the side it
+  /// leaves from) — and attaches the arrow to it. The block is selected, so
+  /// the chain buttons carry on from there.
+  void addBlockAtConnector(String id, ReusableSymbol symbol, {required bool atEnd}) {
+    final d = _connector(id);
+    final s = state;
+    final page = s?.currentPage;
+    if (d == null || s == null || page == null) return;
+    if (!canAddBlockAtConnector(id, atEnd: atEnd)) return;
+
+    // The end point, and the direction the line runs out through it.
+    final route = connectorRoute(d);
+    final fromTip = atEnd ? route.reversed.toList() : route;
+    final tip = fromTip.first;
+    var back = tip;
+    for (final p in fromTip.skip(1)) {
+      if ((p - tip).distance > 0.01) {
+        back = p;
+        break;
+      }
+    }
+    final v = tip - back;
+    final dir = v == Offset.zero
+        ? const Offset(1, 0)
+        : v.dx.abs() >= v.dy.abs()
+            ? Offset(v.dx.sign, 0)
+            : Offset(0, v.dy.sign);
+
+    final size = symbol.bounds.size;
+    final center = tip + Offset(dir.dx * size.width / 2, dir.dy * size.height / 2);
+    final shift = center - symbol.bounds.center;
+    final pen = s.toolSettings.color;
+    final placed = _freshCopies([
+      for (final e in symbol.elements) tintElement(_translateElement(e, shift), pen)
+    ], _nextZIndex(page));
+    final bodyIdx = placed.indexWhere(isBlockBody);
+    if (bodyIdx < 0) return;
+    final bodyId = elementId(placed[bodyIdx]);
+
+    final undoStack = _pushUndo(s, s.currentPageFileName, page);
+    final attached = atEnd ? d.copyWith(endId: bodyId) : d.copyWith(startId: bodyId);
+    final content = _snapConnectors([
+      for (final e in page.layers.content)
+        elementId(e) == id
+            ? ContentElement.shape(
+                id: id, zIndex: e.mapOrNull(shape: (x) => x.zIndex)!, data: attached)
+            : e,
+      ...placed,
+    ], {bodyId});
+    final updatedPages = Map<String, PageData>.from(s.pages);
+    updatedPages[s.currentPageFileName] = carryPdfTextLayer(page, PageData(
+      pageId: page.pageId, pageNumber: page.pageNumber,
+      width: page.width, height: page.height,
+      layers: RenderingLayers(background: page.layers.background, content: content),
+      assetReferences: page.assetReferences,
+      createdAt: page.createdAt, modifiedAt: DateTime.now(),
+    ));
+    state = s.copyWith(
+      pages: updatedPages,
+      undoStack: undoStack,
+      redoStack: [],
+      isDirty: true,
+      selectedElementId: bodyId,
+      clearLasso: true,
     );
   }
 

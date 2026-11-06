@@ -332,10 +332,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get csChainSame => '与此方块相同';
 
   @override
+  String get csChainArrow => '箭头';
+
+  @override
   String get csTidy => '整理对齐';
 
   @override
   String get csToggleElbow => '折线 / 直线';
+
+  @override
+  String get csBlockAtStart => '在箭头起点添加方块';
+
+  @override
+  String get csBlockAtEnd => '在箭头末端添加方块';
 
   @override
   String get csSelectionDuplicated => '已复制所选内容';

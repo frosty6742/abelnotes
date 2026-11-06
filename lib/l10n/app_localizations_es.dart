@@ -343,10 +343,19 @@ class AppLocalizationsEs extends AppLocalizations {
   String get csChainSame => 'Igual que este bloque';
 
   @override
+  String get csChainArrow => 'Flecha';
+
+  @override
   String get csTidy => 'Alinear';
 
   @override
   String get csToggleElbow => 'Codo / línea recta';
+
+  @override
+  String get csBlockAtStart => 'Bloque al inicio de la flecha';
+
+  @override
+  String get csBlockAtEnd => 'Bloque en la punta de la flecha';
 
   @override
   String get csSelectionDuplicated => 'Selección duplicada';

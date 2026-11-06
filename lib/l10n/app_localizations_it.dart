@@ -344,10 +344,19 @@ class AppLocalizationsIt extends AppLocalizations {
   String get csChainSame => 'Come questo blocco';
 
   @override
+  String get csChainArrow => 'Freccia';
+
+  @override
   String get csTidy => 'Allinea';
 
   @override
   String get csToggleElbow => 'Gomito / linea retta';
+
+  @override
+  String get csBlockAtStart => 'Blocco all\'inizio della freccia';
+
+  @override
+  String get csBlockAtEnd => 'Blocco alla punta della freccia';
 
   @override
   String get csSelectionDuplicated => 'Selezione duplicata';

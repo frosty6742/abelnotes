@@ -342,10 +342,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get csChainSame => 'Same as this block';
 
   @override
+  String get csChainArrow => 'Arrow';
+
+  @override
   String get csTidy => 'Tidy up';
 
   @override
   String get csToggleElbow => 'Elbow / straight line';
+
+  @override
+  String get csBlockAtStart => 'Block at the arrow\'s start';
+
+  @override
+  String get csBlockAtEnd => 'Block at the arrow\'s end';
 
   @override
   String get csSelectionDuplicated => 'Selection duplicated';

@@ -344,10 +344,19 @@ class AppLocalizationsDe extends AppLocalizations {
   String get csChainSame => 'Wie dieser Block';
 
   @override
+  String get csChainArrow => 'Pfeil';
+
+  @override
   String get csTidy => 'Ausrichten';
 
   @override
   String get csToggleElbow => 'Winkel / gerade Linie';
+
+  @override
+  String get csBlockAtStart => 'Block am Pfeilanfang';
+
+  @override
+  String get csBlockAtEnd => 'Block an der Pfeilspitze';
 
   @override
   String get csSelectionDuplicated => 'Auswahl dupliziert';

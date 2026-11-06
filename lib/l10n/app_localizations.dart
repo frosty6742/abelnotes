@@ -648,6 +648,12 @@ abstract class AppLocalizations {
   /// **'Come questo blocco'**
   String get csChainSame;
 
+  /// No description provided for @csChainArrow.
+  ///
+  /// In it, this message translates to:
+  /// **'Freccia'**
+  String get csChainArrow;
+
   /// No description provided for @csTidy.
   ///
   /// In it, this message translates to:
@@ -659,6 +665,18 @@ abstract class AppLocalizations {
   /// In it, this message translates to:
   /// **'Gomito / linea retta'**
   String get csToggleElbow;
+
+  /// No description provided for @csBlockAtStart.
+  ///
+  /// In it, this message translates to:
+  /// **'Blocco all\'inizio della freccia'**
+  String get csBlockAtStart;
+
+  /// No description provided for @csBlockAtEnd.
+  ///
+  /// In it, this message translates to:
+  /// **'Blocco alla punta della freccia'**
+  String get csBlockAtEnd;
 
   /// No description provided for @csSelectionDuplicated.
   ///

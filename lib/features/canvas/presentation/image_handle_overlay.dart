@@ -33,6 +33,9 @@ class ImageHandleOverlay extends StatefulWidget {
   /// Block diagrams: add a block (with an attached arrow) to the right / below.
   /// Attached arrows: switch between an elbow and a straight line.
   final VoidCallback? onToggleElbow;
+  /// Arrows: put a block on the free start / tip of the arrow.
+  final VoidCallback? onBlockAtStart;
+  final VoidCallback? onBlockAtEnd;
   final bool isElbow;
   final VoidCallback? onChainLeft;
   final VoidCallback? onChainUp;
@@ -68,6 +71,8 @@ class ImageHandleOverlay extends StatefulWidget {
     this.onFontSmaller,
     this.onFontLarger,
     this.onToggleElbow,
+    this.onBlockAtStart,
+    this.onBlockAtEnd,
     this.isElbow = false,
     this.onChainLeft,
     this.onChainUp,
@@ -377,6 +382,16 @@ class _ImageHandleOverlayState extends State<ImageHandleOverlay> {
                   widget.onFontSmaller!, l10n.imgFontSmaller),
               _actionBtn(Icons.text_increase_rounded, p.ink2,
                   widget.onFontLarger!, l10n.imgFontLarger),
+              _divider(),
+            ],
+            if ((widget.onBlockAtStart != null || widget.onBlockAtEnd != null) &&
+                !widget.isLocked) ...[
+              if (widget.onBlockAtStart != null)
+                _actionBtn(Icons.first_page_rounded, p.ink2,
+                    widget.onBlockAtStart!, l10n.csBlockAtStart),
+              if (widget.onBlockAtEnd != null)
+                _actionBtn(Icons.last_page_rounded, p.ink2,
+                    widget.onBlockAtEnd!, l10n.csBlockAtEnd),
               _divider(),
             ],
             if (widget.onToggleElbow != null) ...[

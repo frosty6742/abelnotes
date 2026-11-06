@@ -6360,6 +6360,14 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
                 n.resizeTextElement(elementId, fontScale: 1.15);
               }
             : null,
+        onBlockAtStart:
+            ref.read(canvasProvider.notifier).canAddBlockAtConnector(elementId, atEnd: false)
+                ? () => _blockAtConnector(elementId, atEnd: false)
+                : null,
+        onBlockAtEnd:
+            ref.read(canvasProvider.notifier).canAddBlockAtConnector(elementId, atEnd: true)
+                ? () => _blockAtConnector(elementId, atEnd: true)
+                : null,
         onToggleElbow: element.mapOrNull(
                     shape: (x) =>
                         (x.data.shapeType == 'arrow' || x.data.shapeType == 'line') &&
@@ -6478,6 +6486,50 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
     ];
   }
 
+  /// Asks which block to add. With [allowSame] the first options are "same
+  /// as this block" (the string 'same') and an empty arrow ('arrow'); then
+  /// the built-in blocks (a [ReusableSymbol]), the common ones first. Null if
+  /// dismissed.
+  Future<Object?> _pickBlock(String title, {required bool allowSame}) {
+    final l10n = AppLocalizations.of(context);
+    const icons = {
+      'block': Icons.crop_16_9_rounded,
+      'rounded': Icons.rounded_corner_rounded,
+      'terminator': Icons.stadium_outlined,
+      'decision': Icons.diamond_outlined,
+      'io': Icons.input_rounded,
+      'circle': Icons.circle_outlined,
+    };
+    // The order they're offered in: node and block first, then the rest.
+    const order = ['circle', 'block', 'rounded', 'terminator', 'decision', 'io'];
+    int rank(ReusableSymbol s) {
+      final i = order.indexOf(s.id.split('-').last);
+      return i < 0 ? order.length : i;
+    }
+
+    final blocks = blockDiagramBlocks()..sort((a, b) => rank(a).compareTo(rank(b)));
+    Widget option(IconData icon, String text, Object value, BuildContext ctx) =>
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(ctx, value),
+          child: Row(children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(text)]),
+        );
+    return showDialog<Object>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(title),
+        children: [
+          if (allowSame) ...[
+            option(Icons.copy_rounded, l10n.csChainSame, 'same', ctx),
+            option(Icons.arrow_right_alt_rounded, l10n.csChainArrow, 'arrow', ctx),
+          ],
+          for (final sym in blocks)
+            option(icons[sym.id.split('-').last] ?? Icons.crop_square_rounded,
+                sym.name, sym, ctx),
+        ],
+      ),
+    );
+  }
+
   /// Block diagrams: after picking a direction, pick what to put there.
   Future<void> _chainWithChoice(Offset dir) async {
     final l10n = AppLocalizations.of(context);
@@ -6488,34 +6540,20 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
             : dir.dy > 0
                 ? l10n.csChainDown
                 : l10n.csChainUp;
-    const icons = {
-      'block': Icons.crop_16_9_rounded,
-      'rounded': Icons.rounded_corner_rounded,
-      'terminator': Icons.stadium_outlined,
-      'decision': Icons.diamond_outlined,
-      'io': Icons.input_rounded,
-      'circle': Icons.circle_outlined,
-    };
-    Widget option(IconData icon, String text, Object value, BuildContext ctx) =>
-        SimpleDialogOption(
-          onPressed: () => Navigator.pop(ctx, value),
-          child: Row(children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(text)]),
-        );
-    final picked = await showDialog<Object>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(title),
-        children: [
-          option(Icons.copy_rounded, l10n.csChainSame, 'same', ctx),
-          for (final sym in blockDiagramBlocks())
-            option(icons[sym.id.split('-').last] ?? Icons.crop_square_rounded,
-                sym.name, sym, ctx),
-        ],
-      ),
-    );
+    final picked = await _pickBlock(title, allowSame: true);
     if (picked == null) return;
     ref.read(canvasProvider.notifier).chainSelection(dir,
-        symbol: picked is ReusableSymbol ? picked : null);
+        symbol: picked is ReusableSymbol ? picked : null,
+        arrowOnly: picked == 'arrow');
+  }
+
+  /// Starting from an arrow: pick a block for its start or tip.
+  Future<void> _blockAtConnector(String arrowId, {required bool atEnd}) async {
+    final l10n = AppLocalizations.of(context);
+    final picked = await _pickBlock(
+        atEnd ? l10n.csBlockAtEnd : l10n.csBlockAtStart, allowSame: false);
+    if (picked is! ReusableSymbol) return;
+    ref.read(canvasProvider.notifier).addBlockAtConnector(arrowId, picked, atEnd: atEnd);
   }
 
   Future<void> _showCommentDialog(String elementId) async {

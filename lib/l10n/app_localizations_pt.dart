@@ -343,10 +343,19 @@ class AppLocalizationsPt extends AppLocalizations {
   String get csChainSame => 'Igual a este bloco';
 
   @override
+  String get csChainArrow => 'Seta';
+
+  @override
   String get csTidy => 'Alinhar';
 
   @override
   String get csToggleElbow => 'Cotovelo / linha reta';
+
+  @override
+  String get csBlockAtStart => 'Bloco no início da seta';
+
+  @override
+  String get csBlockAtEnd => 'Bloco na ponta da seta';
 
   @override
   String get csSelectionDuplicated => 'Seleção duplicada';
