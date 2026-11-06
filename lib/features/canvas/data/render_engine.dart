@@ -1983,7 +1983,7 @@ class CanvasRenderEngine extends CustomPainter {
       }
     }
     final angle = atan2(shape.y2 - from.dy, shape.x2 - from.dx);
-    const arrowLen = 15.0;
+    const arrowLen = 3.75; // a quarter of the old 15: short, tidy arms
     const arrowAngle = 0.5;
     final path = Path()
       ..moveTo(shape.x2, shape.y2)
