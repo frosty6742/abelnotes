@@ -6744,6 +6744,15 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
                 ref.read(canvasProvider.notifier).duplicateSelection();
                 _toast(AppLocalizations.of(context).csSelectionDuplicated);
               }),
+              // Block diagrams: a lone arrow can take a block on its start / tip.
+              if (ref.read(canvasProvider.notifier).selectedConnectorId case final arrowId?) ...[
+                if (ref.read(canvasProvider.notifier).canAddBlockAtConnector(arrowId, atEnd: false))
+                  _FloatingActionBtn(Icons.first_page_rounded, AppLocalizations.of(context).csBlockAtStart,
+                      () => _blockAtConnector(arrowId, atEnd: false)),
+                if (ref.read(canvasProvider.notifier).canAddBlockAtConnector(arrowId, atEnd: true))
+                  _FloatingActionBtn(Icons.last_page_rounded, AppLocalizations.of(context).csBlockAtEnd,
+                      () => _blockAtConnector(arrowId, atEnd: true)),
+              ],
               // Block diagrams: line several selected blocks up in rows/columns.
               if (ref.read(canvasProvider.notifier).canTidySelection)
                 _FloatingActionBtn(Icons.auto_fix_high_rounded, AppLocalizations.of(context).csTidy,

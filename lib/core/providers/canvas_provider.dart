@@ -4515,6 +4515,15 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     return null;
   }
 
+  /// Id of the arrow/line when it is the one thing selected, by lasso or by
+  /// click (a placed library arrow arrives lasso-selected), else null.
+  String? get selectedConnectorId {
+    final els = _currentSelection()?.$1;
+    if (els == null || els.length != 1) return null;
+    final d = els.first.mapOrNull(shape: (x) => x.data);
+    return d != null && isConnector(d) ? elementId(els.first) : null;
+  }
+
   /// True when [id] is an arrow/line whose [atEnd] (tip) or start end has no
   /// block attached yet, so a block can be put there.
   bool canAddBlockAtConnector(String id, {required bool atEnd}) {

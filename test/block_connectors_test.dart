@@ -398,4 +398,20 @@ void main() {
     n.addBlockAtConnector(arrowId, blockDiagramBlocks().first, atEnd: true);
     expect(_shape(n.state!, arrowId).endId, n.state!.selectedElementId);
   });
+  test('a library arrow (lasso-selected on placement) offers block-at-end; a block does not', () {
+    n.state = _state([], null);
+    expect(blockDiagramBlocks().any((s) => s.id.contains('-arrow-')), isFalse); // arrows aren't "blocks"
+    final arrow = blockDiagramLibrary().symbols.firstWhere((s) => s.id.endsWith('-arrow-d'));
+    n.insertSymbol(arrow, const Offset(100, 100));
+    expect(n.state!.lassoSelection, isNotNull); // lasso, not a click selection
+    final id = n.selectedConnectorId;
+    expect(id, isNotNull);
+    expect(n.canAddBlockAtConnector(id!, atEnd: true), isTrue);
+    n.addBlockAtConnector(id, blockDiagramBlocks().first, atEnd: true);
+    expect(n.state!.lassoSelection, isNull); // moved on to the new block
+    expect(n.canChainSelection, isTrue); // so the chain buttons continue from it
+    n.state = _state([_box('b', 0, 0)],
+        const LassoSelection(selectedIds: ['b'], bounds: Rect.fromLTWH(0, 0, 100, 50)));
+    expect(n.selectedConnectorId, isNull);
+  });
 }
