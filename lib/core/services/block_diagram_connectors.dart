@@ -222,6 +222,55 @@ List<Offset> connectorRoute(ShapeData d) {
   }
 }
 
+/// The point [t] (0..1) of the way along [route], by length.
+Offset routePoint(List<Offset> route, double t) {
+  var total = 0.0;
+  for (var i = 0; i + 1 < route.length; i++) {
+    total += (route[i + 1] - route[i]).distance;
+  }
+  var left = t.clamp(0.0, 1.0) * total;
+  for (var i = 0; i + 1 < route.length; i++) {
+    final len = (route[i + 1] - route[i]).distance;
+    if (left <= len && len > 0) return Offset.lerp(route[i], route[i + 1], left / len)!;
+    left -= len;
+  }
+  return route.last;
+}
+
+/// The connector (arrow or line) in [content] passing within [tolerance] of
+/// [p], as its id and how far along its route the nearest point is — where a
+/// freshly drawn arrow's end takes off from. Null if none is that close.
+(String, double)? connectorAt(List<ContentElement> content, Offset p, double tolerance) {
+  (String, double)? best;
+  var bestDist = tolerance;
+  for (final e in content) {
+    final d = e.mapOrNull(shape: (x) => x.data);
+    if (d == null || !isConnector(d)) continue;
+    final route = connectorRoute(d);
+    var total = 0.0;
+    for (var i = 0; i + 1 < route.length; i++) {
+      total += (route[i + 1] - route[i]).distance;
+    }
+    if (total == 0) continue;
+    var along = 0.0;
+    for (var i = 0; i + 1 < route.length; i++) {
+      final a = route[i], b = route[i + 1];
+      final seg = b - a;
+      final len = seg.distance;
+      if (len > 0) {
+        final u = (((p - a).dx * seg.dx + (p - a).dy * seg.dy) / (len * len)).clamp(0.0, 1.0);
+        final dist = (p - (a + seg * u)).distance;
+        if (dist <= bestDist) {
+          bestDist = dist;
+          best = (elementId(e), (along + u * len) / total);
+        }
+      }
+      along += len;
+    }
+  }
+  return best;
+}
+
 /// Space kept between a detouring arrow and the blocks it goes around.
 const _laneGap = 10.0;
 
@@ -246,9 +295,25 @@ const _laneGap = 10.0;
 /// vertical runs, a few px off a diamond/circle corner on diagonals.
 ShapeData snapConnector(
     ShapeData d, Map<String, ContentElement> byId, BoundsOf boundsOf) {
-  Rect? box(String? id) =>
-      id == null || byId[id] == null ? null : boundsOf(byId[id]!);
-  final a = box(d.startId), b = box(d.endId);
+  // An end on another arrow (a takeoff) sits at its fraction along that
+  // arrow's route and is otherwise routed like a free end.
+  ShapeData? host(String? id, double? t) {
+    final h = t == null || id == null ? null : byId[id]?.mapOrNull(shape: (x) => x.data);
+    return h != null && isConnector(h) ? h : null;
+  }
+
+  final hs = host(d.startId, d.startT), he = host(d.endId, d.endT);
+  if (hs != null) {
+    final p = routePoint(connectorRoute(hs), d.startT!);
+    d = d.copyWith(x1: p.dx, y1: p.dy);
+  }
+  if (he != null) {
+    final p = routePoint(connectorRoute(he), d.endT!);
+    d = d.copyWith(x2: p.dx, y2: p.dy);
+  }
+  Rect? box(String? id, double? t) =>
+      id == null || t != null || byId[id] == null ? null : boundsOf(byId[id]!);
+  final a = box(d.startId, d.startT), b = box(d.endId, d.endT);
   if (a == null && b == null) return d;
   final p1 = Offset(d.x1, d.y1), p2 = Offset(d.x2, d.y2);
   if (d.elbow == null) {
@@ -304,6 +369,21 @@ ShapeData snapConnector(
               ? r.deflate(1)
               : r.inflate(_laneGap / 2),
   ];
+  // A takeoff may cross its host arrow but not run back along it.
+  final hostSegs = <(Offset, Offset)>[
+    for (final h in [hs, he].whereType<ShapeData>())
+      for (final (i, p) in connectorRoute(h).indexed.skip(1))
+        (connectorRoute(h)[i - 1], p),
+  ];
+  bool alongHost(Offset p, Offset q) {
+    for (final (h1, h2) in hostSegs) {
+      final o = Rect.fromPoints(p, q).inflate(2).intersect(Rect.fromPoints(h1, h2).inflate(2));
+      // Overlap longer than a crossing: the two run side by side.
+      if (o.width >= 0 && o.height >= 0 && max(o.width, o.height) > 8) return true;
+    }
+    return false;
+  }
+
   bool clear(ShapeData r) {
     final pts = connectorRoute(r);
     for (var i = 0; i + 1 < pts.length; i++) {
@@ -311,6 +391,7 @@ ShapeData snapConnector(
       for (final o in obstacles) {
         if (seg.overlaps(o)) return false;
       }
+      if (alongHost(pts[i], pts[i + 1])) return false;
     }
     return true;
   }
@@ -426,21 +507,36 @@ Map<String, ShapeData> liveConnectorRoutes(
   Offset Function(ShapeData d, Offset p) moveEnd,
   BoundsOf liveBounds,
 ) {
-  Map<String, ContentElement>? byId;
+  final byId = {for (final x in content) elementId(x): x};
   final routes = <String, ShapeData>{};
-  for (final e in content) {
-    if (e is! ShapeElement) continue;
-    var d = e.data;
-    if (d.startId == null && d.endId == null) continue;
-    if (d.elbow == null && !isMoving(e.id) && !isMoving(d.startId) && !isMoving(d.endId)) {
-      continue;
+  // Takeoffs last, so they hang off their host's live route (as on the drop).
+  for (final second in [false, true]) {
+    for (final e in content) {
+      if (e is! ShapeElement) continue;
+      var d = e.data;
+      if (d.startId == null && d.endId == null) continue;
+      final takeoff = d.startT != null || d.endT != null;
+      if (takeoff != second) continue;
+      if (!takeoff &&
+          d.elbow == null &&
+          !isMoving(e.id) &&
+          !isMoving(d.startId) &&
+          !isMoving(d.endId)) {
+        continue;
+      }
+      if (isMoving(e.id)) {
+        final a = moveEnd(d, Offset(d.x1, d.y1)), b = moveEnd(d, Offset(d.x2, d.y2));
+        d = d.copyWith(x1: a.dx, y1: a.dy, x2: b.dx, y2: b.dy);
+      }
+      final lookup = second
+          ? {
+              ...byId,
+              for (final r in routes.entries)
+                r.key: ContentElement.shape(id: r.key, zIndex: 0, data: r.value),
+            }
+          : byId;
+      routes[e.id] = snapConnector(d, lookup, liveBounds);
     }
-    if (isMoving(e.id)) {
-      final a = moveEnd(d, Offset(d.x1, d.y1)), b = moveEnd(d, Offset(d.x2, d.y2));
-      d = d.copyWith(x1: a.dx, y1: a.dy, x2: b.dx, y2: b.dy);
-    }
-    byId ??= {for (final x in content) elementId(x): x};
-    routes[e.id] = snapConnector(d, byId, liveBounds);
   }
   return routes;
 }
@@ -449,27 +545,38 @@ Map<String, ShapeData> liveConnectorRoutes(
 /// or is attached to something that moved. Attached ends never come loose —
 /// a moved arrow's attached ends go back onto their blocks; only a free end
 /// goes where it was dragged. Deleting the arrow is how it is unlinked.
+///
+/// Arrows taking off from another arrow go in a second pass, against their
+/// host's new route. shortcut: one level only — a takeoff from a takeoff
+/// lags one move behind; recurse if anyone draws those.
 List<ContentElement> snapConnectors(
     List<ContentElement> content, Set<String> moved, BoundsOf boundsOf) {
-  final byId = {for (final e in content) elementId(e): e};
-  return [
-    for (final e in content)
-      e.maybeMap(
-        shape: (s) {
-          var d = s.data;
-          if (d.startId == null && d.endId == null) return e;
-          // Elbows also re-route when some other block moved into their way.
-          if (d.elbow != null ||
-              moved.contains(s.id) ||
-              moved.contains(d.startId) ||
-              moved.contains(d.endId)) {
-            d = snapConnector(d, byId, boundsOf);
-          }
-          return ContentElement.shape(id: s.id, zIndex: s.zIndex, data: d);
-        },
-        orElse: () => e,
-      ),
-  ];
+  bool takeoff(ShapeData d) => d.startT != null || d.endT != null;
+  List<ContentElement> pass(List<ContentElement> content, bool second) {
+    final byId = {for (final e in content) elementId(e): e};
+    return [
+      for (final e in content)
+        e.maybeMap(
+          shape: (s) {
+            var d = s.data;
+            if (d.startId == null && d.endId == null) return e;
+            if (takeoff(d) != second) return e;
+            // Elbows also re-route when some other block moved into their way.
+            if (second ||
+                d.elbow != null ||
+                moved.contains(s.id) ||
+                moved.contains(d.startId) ||
+                moved.contains(d.endId)) {
+              d = snapConnector(d, byId, boundsOf);
+            }
+            return ContentElement.shape(id: s.id, zIndex: s.zIndex, data: d);
+          },
+          orElse: () => e,
+        ),
+    ];
+  }
+
+  return pass(pass(content, false), true);
 }
 
 /// Copies got new ids, so a copied connector must point at the copied blocks
@@ -490,7 +597,11 @@ List<ContentElement> remapConnectors(
                 id: s.id,
                 zIndex: s.zIndex,
                 data: s.data.copyWith(
-                    startId: ids[s.data.startId], endId: ids[s.data.endId])),
+                    startId: ids[s.data.startId],
+                    endId: ids[s.data.endId],
+                    // A takeoff whose host wasn't copied is a plain free end.
+                    startT: ids[s.data.startId] == null ? null : s.data.startT,
+                    endT: ids[s.data.endId] == null ? null : s.data.endT)),
         orElse: () => e,
       ),
   ];

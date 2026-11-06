@@ -1888,6 +1888,11 @@ class CanvasRenderEngine extends CustomPainter {
       case 'arrow':
         _paintConnectorLine(canvas, shape, strokePaint);
         _paintArrowHead(canvas, shape, strokePaint);
+        // A takeoff from another arrow gets the junction dot of a block diagram.
+        if (shape.startT != null) {
+          canvas.drawCircle(Offset(shape.x1, shape.y1), max(2.0, shape.strokeWidth * 1.5),
+              Paint()..color = Color(shape.strokeColor));
+        }
         break;
       case 'triangle': {
         // Highest-priority path: oblique triangles store explicit

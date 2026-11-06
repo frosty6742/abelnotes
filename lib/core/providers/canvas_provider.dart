@@ -3473,10 +3473,20 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
       // A plain line touching a box is usually just a note mark: it only
       // attaches when it joins two blocks.
       if (shapeData.shapeType == 'line' && (from == null || to == null)) from = to = null;
-      if (from != null || to != null) {
+      // An arrow end that lands on another arrow takes off from it (a
+      // feedback path tapped off an output line).
+      final onArrowStart = from != null || shapeData.shapeType != 'arrow'
+          ? null
+          : connectorAt(page.layers.content, Offset(x1, y1), 6);
+      final onArrowEnd = to != null || shapeData.shapeType != 'arrow'
+          ? null
+          : connectorAt(page.layers.content, Offset(x2, y2), 6);
+      if (from != null || to != null || onArrowStart != null || onArrowEnd != null) {
         shapeData = shapeData.copyWith(
-            startId: from == null ? null : elementId(from),
-            endId: to == null ? null : elementId(to),
+            startId: from == null ? onArrowStart?.$1 : elementId(from),
+            startT: onArrowStart?.$2,
+            endId: to == null ? onArrowEnd?.$1 : elementId(to),
+            endT: onArrowEnd?.$2,
             elbow: 'h');
         shapeData = _snapConnector(shapeData, {
           for (final e in page.layers.content) elementId(e): e,

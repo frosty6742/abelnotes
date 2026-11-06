@@ -5539,7 +5539,13 @@ mixin _$ShapeData {
   double? get lane =>
       throw _privateConstructorUsedError; // Elbows: the middle leg the user dragged, as an offset from halfway
 // between the two blocks' centres. Null = routed automatically.
-  double? get bend => throw _privateConstructorUsedError;
+  double? get bend =>
+      throw _privateConstructorUsedError; // Takeoff points: when [startId] / [endId] is another arrow or line, how
+// far along that connector's route the end sits (0 = its start, 1 = its
+// end), so the end slides along when the host re-routes. Null = the id
+// is a block (or nothing).
+  double? get startT => throw _privateConstructorUsedError;
+  double? get endT => throw _privateConstructorUsedError;
 
   /// Serializes this ShapeData to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -5572,7 +5578,9 @@ abstract class $ShapeDataCopyWith<$Res> {
       String? endId,
       String? elbow,
       double? lane,
-      double? bend});
+      double? bend,
+      double? startT,
+      double? endT});
 }
 
 /// @nodoc
@@ -5606,6 +5614,8 @@ class _$ShapeDataCopyWithImpl<$Res, $Val extends ShapeData>
     Object? elbow = freezed,
     Object? lane = freezed,
     Object? bend = freezed,
+    Object? startT = freezed,
+    Object? endT = freezed,
   }) {
     return _then(_value.copyWith(
       shapeType: null == shapeType
@@ -5672,6 +5682,14 @@ class _$ShapeDataCopyWithImpl<$Res, $Val extends ShapeData>
           ? _value.bend
           : bend // ignore: cast_nullable_to_non_nullable
               as double?,
+      startT: freezed == startT
+          ? _value.startT
+          : startT // ignore: cast_nullable_to_non_nullable
+              as double?,
+      endT: freezed == endT
+          ? _value.endT
+          : endT // ignore: cast_nullable_to_non_nullable
+              as double?,
     ) as $Val);
   }
 }
@@ -5700,7 +5718,9 @@ abstract class _$$ShapeDataImplCopyWith<$Res>
       String? endId,
       String? elbow,
       double? lane,
-      double? bend});
+      double? bend,
+      double? startT,
+      double? endT});
 }
 
 /// @nodoc
@@ -5732,6 +5752,8 @@ class __$$ShapeDataImplCopyWithImpl<$Res>
     Object? elbow = freezed,
     Object? lane = freezed,
     Object? bend = freezed,
+    Object? startT = freezed,
+    Object? endT = freezed,
   }) {
     return _then(_$ShapeDataImpl(
       shapeType: null == shapeType
@@ -5798,6 +5820,14 @@ class __$$ShapeDataImplCopyWithImpl<$Res>
           ? _value.bend
           : bend // ignore: cast_nullable_to_non_nullable
               as double?,
+      startT: freezed == startT
+          ? _value.startT
+          : startT // ignore: cast_nullable_to_non_nullable
+              as double?,
+      endT: freezed == endT
+          ? _value.endT
+          : endT // ignore: cast_nullable_to_non_nullable
+              as double?,
     ));
   }
 }
@@ -5821,7 +5851,9 @@ class _$ShapeDataImpl implements _ShapeData {
       this.endId,
       this.elbow,
       this.lane,
-      this.bend})
+      this.bend,
+      this.startT,
+      this.endT})
       : _vertices = vertices;
 
   factory _$ShapeDataImpl.fromJson(Map<String, dynamic> json) =>
@@ -5899,10 +5931,18 @@ class _$ShapeDataImpl implements _ShapeData {
 // between the two blocks' centres. Null = routed automatically.
   @override
   final double? bend;
+// Takeoff points: when [startId] / [endId] is another arrow or line, how
+// far along that connector's route the end sits (0 = its start, 1 = its
+// end), so the end slides along when the host re-routes. Null = the id
+// is a block (or nothing).
+  @override
+  final double? startT;
+  @override
+  final double? endT;
 
   @override
   String toString() {
-    return 'ShapeData(shapeType: $shapeType, x1: $x1, y1: $y1, x2: $x2, y2: $y2, strokeColor: $strokeColor, strokeWidth: $strokeWidth, isHighlighter: $isHighlighter, fillColor: $fillColor, rotation: $rotation, vertices: $vertices, startId: $startId, endId: $endId, elbow: $elbow, lane: $lane, bend: $bend)';
+    return 'ShapeData(shapeType: $shapeType, x1: $x1, y1: $y1, x2: $x2, y2: $y2, strokeColor: $strokeColor, strokeWidth: $strokeWidth, isHighlighter: $isHighlighter, fillColor: $fillColor, rotation: $rotation, vertices: $vertices, startId: $startId, endId: $endId, elbow: $elbow, lane: $lane, bend: $bend, startT: $startT, endT: $endT)';
   }
 
   @override
@@ -5931,7 +5971,9 @@ class _$ShapeDataImpl implements _ShapeData {
             (identical(other.endId, endId) || other.endId == endId) &&
             (identical(other.elbow, elbow) || other.elbow == elbow) &&
             (identical(other.lane, lane) || other.lane == lane) &&
-            (identical(other.bend, bend) || other.bend == bend));
+            (identical(other.bend, bend) || other.bend == bend) &&
+            (identical(other.startT, startT) || other.startT == startT) &&
+            (identical(other.endT, endT) || other.endT == endT));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -5953,7 +5995,9 @@ class _$ShapeDataImpl implements _ShapeData {
       endId,
       elbow,
       lane,
-      bend);
+      bend,
+      startT,
+      endT);
 
   /// Create a copy of ShapeData
   /// with the given fields replaced by the non-null parameter values.
@@ -5988,7 +6032,9 @@ abstract class _ShapeData implements ShapeData {
       final String? endId,
       final String? elbow,
       final double? lane,
-      final double? bend}) = _$ShapeDataImpl;
+      final double? bend,
+      final double? startT,
+      final double? endT}) = _$ShapeDataImpl;
 
   factory _ShapeData.fromJson(Map<String, dynamic> json) =
       _$ShapeDataImpl.fromJson;
@@ -6045,7 +6091,15 @@ abstract class _ShapeData implements ShapeData {
       get lane; // Elbows: the middle leg the user dragged, as an offset from halfway
 // between the two blocks' centres. Null = routed automatically.
   @override
-  double? get bend;
+  double?
+      get bend; // Takeoff points: when [startId] / [endId] is another arrow or line, how
+// far along that connector's route the end sits (0 = its start, 1 = its
+// end), so the end slides along when the host re-routes. Null = the id
+// is a block (or nothing).
+  @override
+  double? get startT;
+  @override
+  double? get endT;
 
   /// Create a copy of ShapeData
   /// with the given fields replaced by the non-null parameter values.

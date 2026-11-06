@@ -213,6 +213,69 @@ void main() {
     expect(connectorRoute(_shape(n.state!, 'r')).every((p) => p.dy == 25), isTrue);
   });
 
+  group('takeoff points', () {
+    // s -> g along a row; a feedback arrow t takes off halfway along it to s.
+    ContentElement fwd() => ContentElement.shape(
+        id: 'f',
+        zIndex: 1,
+        data: const ShapeData(
+            shapeType: 'arrow', x1: 100, y1: 25, x2: 300, y2: 25,
+            startId: 's', endId: 'g', elbow: 'h'));
+
+    test('drawing an arrow from another arrow takes off from it and loops under', () {
+      final st = _state([_box('s', 0, 0), _box('g', 300, 0), fwd()], null);
+      n.state = st.copyWith(
+          currentTool: CanvasTool.shape,
+          shapeStartPos: const Offset(250, 26), // on f, 3/4 of the way
+          shapeEndPos: const Offset(50, 30), // inside s
+          toolSettings: st.toolSettings.copyWith(shapeType: 'arrow'));
+      n.endStroke();
+      final t = n.state!.currentPage!.layers.content.last.mapOrNull(shape: (x) => x.data)!;
+      expect(t.startId, 'f');
+      expect(t.startT, closeTo(0.75, 0.01));
+      expect(t.endId, 's');
+      expect((t.x1, t.y1), (250.0, 25.0)); // snapped onto the line
+      // Leaves the line downward and comes back up into s from below,
+      // instead of running back along f.
+      final route = connectorRoute(t);
+      expect(route.skip(1).take(route.length - 2).every((p) => p.dy > 50), isTrue);
+      expect(t.y2, closeTo(50, 1.5)); // s's bottom (outer edge of its stroke)
+    });
+
+    test('a takeoff slides along when its host re-routes', () {
+      final t = ContentElement.shape(
+          id: 't',
+          zIndex: 2,
+          data: const ShapeData(
+              shapeType: 'arrow', x1: 200, y1: 25, x2: 50, y2: 50,
+              startId: 'f', startT: 0.5, endId: 's', elbow: 'v'));
+      n.state = _state([_box('s', 0, 0), _box('g', 300, 0), fwd(), t],
+          const LassoSelection(
+              selectedIds: ['g'], bounds: Rect.fromLTWH(300, 0, 100, 50), dragOffset: Offset(100, 0)));
+      n.applySelectionTransform();
+      final host = _shape(n.state!, 'f');
+      final moved = _shape(n.state!, 't');
+      final expected = routePoint(connectorRoute(host), 0.5);
+      expect(moved.x1, closeTo(expected.dx, 0.01));
+      expect(moved.y1, closeTo(expected.dy, 0.01));
+      expect(moved.startId, 'f');
+    });
+
+    test('a copied takeoff without its host becomes a plain free end', () {
+      final t = ContentElement.shape(
+          id: 't',
+          zIndex: 2,
+          data: const ShapeData(
+              shapeType: 'arrow', x1: 200, y1: 25, x2: 50, y2: 50,
+              startId: 'f', startT: 0.5, endId: 's', elbow: 'v'));
+      final copy = remapConnectors([t], [
+        ContentElement.shape(id: 't2', zIndex: 2, data: (t as ShapeElement).data)
+      ]).single.mapOrNull(shape: (x) => x.data)!;
+      expect(copy.startId, isNull);
+      expect(copy.startT, isNull);
+    });
+  });
+
   test('back to straight forgets a dragged leg', () {
     n.state = _state([
       _box('a', 0, 0),

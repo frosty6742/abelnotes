@@ -406,6 +406,12 @@ class ShapeData with _$ShapeData {
     // Elbows: the middle leg the user dragged, as an offset from halfway
     // between the two blocks' centres. Null = routed automatically.
     double? bend,
+    // Takeoff points: when [startId] / [endId] is another arrow or line, how
+    // far along that connector's route the end sits (0 = its start, 1 = its
+    // end), so the end slides along when the host re-routes. Null = the id
+    // is a block (or nothing).
+    double? startT,
+    double? endT,
   }) = _ShapeData;
 
   factory ShapeData.fromJson(Map<String, dynamic> json) =>

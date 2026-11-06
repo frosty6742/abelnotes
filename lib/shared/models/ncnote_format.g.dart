@@ -465,6 +465,8 @@ _$ShapeDataImpl _$$ShapeDataImplFromJson(Map<String, dynamic> json) =>
       elbow: json['elbow'] as String?,
       lane: (json['lane'] as num?)?.toDouble(),
       bend: (json['bend'] as num?)?.toDouble(),
+      startT: (json['startT'] as num?)?.toDouble(),
+      endT: (json['endT'] as num?)?.toDouble(),
     );
 
 Map<String, dynamic> _$$ShapeDataImplToJson(_$ShapeDataImpl instance) =>
@@ -485,6 +487,8 @@ Map<String, dynamic> _$$ShapeDataImplToJson(_$ShapeDataImpl instance) =>
       'elbow': instance.elbow,
       'lane': instance.lane,
       'bend': instance.bend,
+      'startT': instance.startT,
+      'endT': instance.endT,
     };
 
 _$PdfTextLayerImpl _$$PdfTextLayerImplFromJson(Map<String, dynamic> json) =>
