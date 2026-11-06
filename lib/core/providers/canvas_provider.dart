@@ -4524,11 +4524,14 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     return d != null && isConnector(d) ? elementId(els.first) : null;
   }
 
-  /// True when [id] is an arrow/line whose [atEnd] (tip) or start end has no
-  /// block attached yet, so a block can be put there.
+  /// True when [id] is an *arrow* whose [atEnd] (tip) or start end has no
+  /// block attached yet, so a block can be put there. A plain line has no
+  /// direction to build along, so it never offers this.
   bool canAddBlockAtConnector(String id, {required bool atEnd}) {
     final d = _connector(id);
-    return d != null && (atEnd ? d.endId : d.startId) == null;
+    return d != null &&
+        d.shapeType == 'arrow' &&
+        (atEnd ? d.endId : d.startId) == null;
   }
 
   /// Starting a diagram from an arrow: puts [symbol] on the free end of the

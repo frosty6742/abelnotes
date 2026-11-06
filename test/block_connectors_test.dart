@@ -414,4 +414,20 @@ void main() {
         const LassoSelection(selectedIds: ['b'], bounds: Rect.fromLTWH(0, 0, 100, 50)));
     expect(n.selectedConnectorId, isNull);
   });
+  test('only arrows offer a block at their ends, not plain lines', () {
+    n.state = _state([
+      const ContentElement.shape(
+          id: 'line',
+          zIndex: 0,
+          data: ShapeData(shapeType: 'line', x1: 0, y1: 0, x2: 80, y2: 0)),
+      const ContentElement.shape(
+          id: 'arrow',
+          zIndex: 1,
+          data: ShapeData(shapeType: 'arrow', x1: 0, y1: 50, x2: 80, y2: 50)),
+    ], null);
+    expect(n.canAddBlockAtConnector('line', atEnd: true), isFalse);
+    expect(n.canAddBlockAtConnector('line', atEnd: false), isFalse);
+    expect(n.canAddBlockAtConnector('arrow', atEnd: true), isTrue);
+    expect(n.canAddBlockAtConnector('arrow', atEnd: false), isTrue);
+  });
 }
