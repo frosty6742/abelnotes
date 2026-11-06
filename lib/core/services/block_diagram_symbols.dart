@@ -4,13 +4,16 @@ import 'dart:ui';
 import 'package:abelnotes/core/providers/canvas_state.dart';
 import 'package:abelnotes/shared/models/ncnote_format.dart';
 
-/// Built-in "Block diagram" library: the blocks and arrows you reach for (drawn in the current pen colour)
-/// first, placed with one tap from the symbol panel (then dragged/resized
-/// with the lasso it lands in). Unlabelled and small: write the name next to it.
+/// Built-in "Block diagram" library: the blocks and arrows you reach for
+/// first, placed with one tap from the symbol panel and drawn in the current
+/// pen colour (then dragged/resized with the lasso it lands in). Unlabelled
+/// and small: write the name next to it.
 ///
 /// Ids are fixed so the library merges across devices and notebooks without
 /// duplicating, and deleting it (or one block) sticks via the usual
-/// tombstones.
+/// tombstones. The id carries a version because a library a device already
+/// stored wins over a restyled one on merge: restyling means a new id, with
+/// the old one tombstoned.
 const blockDiagramLibraryId = 'builtin-block-diagram-v4';
 
 /// Earlier versions of this library. A stored copy would win over a restyled
