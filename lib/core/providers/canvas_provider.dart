@@ -21,10 +21,13 @@ import 'package:abelnotes/core/providers/remote_store_provider.dart'
 import 'package:abelnotes/core/services/sync_service.dart';
 import 'package:abelnotes/core/services/sync_thrift.dart';
 import 'package:abelnotes/core/services/symbol_library_service.dart';
+import 'package:abelnotes/core/services/block_diagram_connectors.dart';
+import 'package:abelnotes/core/services/block_diagram_symbols.dart';
 import 'package:abelnotes/core/services/webdav_service.dart' show WebDavException;
 import 'package:abelnotes/features/canvas/data/render_engine.dart'
     show
         CanvasRenderEngine,
+        connectorRoute,
         ballpointWidthFactor,
         penWidthFactor,
         circleDragBox,
@@ -1429,7 +1432,10 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     // notebook. Awaited: the symbol panel must never open on a library that
     // is still loading.
     final mergedSymbols = await _symbols.merge(
-      SymbolCollection(libraries: symbolLibraries ?? const []),
+      SymbolCollection(libraries: [
+        ...?symbolLibraries,
+        blockDiagramLibrary(),
+      ], deletedLibraryIds: retiredBlockDiagramLibraryIds),
     );
     _deletedSymbolIds = {...mergedSymbols.deletedSymbolIds};
     _deletedLibraryIds = {...mergedSymbols.deletedLibraryIds};
@@ -3449,16 +3455,30 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
       x2 = box.right; y2 = box.bottom;
     }
 
+    var shapeData = ShapeData(
+      shapeType: s.toolSettings.shapeType,
+      x1: x1, y1: y1,
+      x2: x2, y2: y2,
+      strokeColor: s.toolSettings.color,
+      strokeWidth: s.toolSettings.strokeWidth,
+    );
+    if (isConnector(shapeData)) {
+      // An arrow/line whose ends land on two different blocks is attached
+      // to them, so moving a block drags it along.
+      final from = blockAt(page.layers.content, Offset(x1, y1), _getElementBounds);
+      final to = blockAt(page.layers.content, Offset(x2, y2), _getElementBounds);
+      if (from != null && to != null && elementId(from) != elementId(to)) {
+        shapeData = shapeData.copyWith(
+            startId: elementId(from), endId: elementId(to), elbow: 'h');
+        shapeData = _snapConnector(shapeData, {
+          for (final e in page.layers.content) elementId(e): e,
+        });
+      }
+    }
     final newElement = ContentElement.shape(
       id: const Uuid().v4(),
       zIndex: _nextZIndex(page),
-      data: ShapeData(
-        shapeType: s.toolSettings.shapeType,
-        x1: x1, y1: y1,
-        x2: x2, y2: y2,
-        strokeColor: s.toolSettings.color,
-        strokeWidth: s.toolSettings.strokeWidth,
-      ),
+      data: shapeData,
     );
 
     final updatedPage = _pageWithNewElement(page, newElement);
@@ -3499,7 +3519,10 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     switch (sh.shapeType) {
       case 'line':
       case 'arrow':
-        rawEdges.add([Offset(sh.x1, sh.y1), Offset(sh.x2, sh.y2)]);
+        final route = connectorRoute(sh);
+        for (var i = 0; i + 1 < route.length; i++) {
+          rawEdges.add([route[i], route[i + 1]]);
+        }
         break;
       case 'rectangle':
         final l = min(sh.x1, sh.x2), r = max(sh.x1, sh.x2);
@@ -4270,6 +4293,261 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     );
   }
 
+  // ── Block diagrams ──
+  //
+  // The rules (what a block is, where connectors attach, how a selection is
+  // tidied) live in services/block_diagram_connectors.dart; this section is
+  // the state, undo and selection plumbing around them.
+
+  ShapeData _snapConnector(ShapeData d, Map<String, ContentElement> byId) =>
+      snapConnector(d, byId, _getElementBounds);
+
+  List<ContentElement> _snapConnectors(
+          List<ContentElement> content, Set<String> moved) =>
+      snapConnectors(content, moved, _getElementBounds);
+
+  /// Built-in block-diagram symbols are drawn in the current pen colour; the
+  /// user's own symbols keep the colours they were saved with.
+  ContentElement _tintBuiltin(ReusableSymbol sym, ContentElement e, int pen) =>
+      sym.id.startsWith('builtin-bd') ? tintElement(e, pen) : e;
+
+  /// The selected elements and their bounds, whether picked with the lasso
+  /// or by clicking one element.
+  (List<ContentElement>, Rect)? _currentSelection() {
+    final s = state;
+    final page = s?.currentPage;
+    if (s == null || page == null) return null;
+    final ids = s.lassoSelection?.selectedIds ??
+        [if (s.selectedElementId != null) s.selectedElementId!];
+    final els = [
+      for (final e in page.layers.content)
+        if (ids.contains(elementId(e))) e
+    ];
+    if (els.isEmpty) return null;
+    final bounds = s.lassoSelection?.bounds ?? _getElementBounds(els.first);
+    return bounds == null ? null : (els, bounds);
+  }
+
+  /// True when the selection holds a block that can be chained.
+  bool get canChainSelection =>
+      _currentSelection()?.$1.any(isBlockBody) ?? false;
+
+  /// One-tap flowchart building: copies the selected block one step in [dir]
+  /// (e.g. `Offset(1, 0)` = right), joins the two with an attached arrow and
+  /// selects the copy, so repeating it lays out a row. By default the copy is
+  /// a clone, so it keeps whatever size the block was resized to; [symbol]
+  /// places that block type instead. Either way it is drawn in the
+  /// current pen colour so a mid-diagram colour change carries on.
+  void chainSelection(Offset dir, {ReusableSymbol? symbol}) {
+    final cur = _currentSelection();
+    if (state == null || cur == null || !cur.$1.any(isBlockBody)) return;
+    final s = state!;
+    final (originals, selBounds) = cur;
+    final page = s.currentPage!;
+    final fileName = s.currentPageFileName;
+    final body = originals.firstWhere(isBlockBody);
+
+    // What gets placed: a clone of the selection, or the chosen block type
+    // scaled to the same height as the block it hangs off (so a row of
+    // mixed blocks lines up and a resized diagram stays consistent).
+    const gap = 22.0;
+    final List<ContentElement> base;
+    final List<ContentElement> placed;
+    final Rect newBounds;
+    if (symbol == null) {
+      base = originals;
+      final offset = Offset(dir.dx * (selBounds.width + gap),
+          dir.dy * (selBounds.height + gap));
+      placed = [for (final e in base) _translateElement(e, offset)];
+      newBounds = selBounds.shift(offset);
+    } else {
+      base = symbol.elements;
+      // Outline height without the stroke, which the library bounds exclude.
+      final line = body.mapOrNull(
+              shape: (b) => b.data.strokeWidth,
+              stroke: (b) => b.data.baseWidth) ??
+          0;
+      final srcH = (_getElementBounds(body)?.height ?? symbol.bounds.height) - line;
+      final k = (srcH / symbol.bounds.height).clamp(0.25, 8.0);
+      final size = symbol.bounds.size * k;
+      final center = selBounds.center +
+          Offset(dir.dx * (selBounds.width / 2 + gap + size.width / 2),
+              dir.dy * (selBounds.height / 2 + gap + size.height / 2));
+      final shift = center - symbol.bounds.center;
+      placed = [
+        for (final e in base)
+          _translateElement(_scaleElement(e, symbol.bounds.center, k), shift)
+      ];
+      newBounds = Rect.fromCenter(
+          center: center, width: size.width, height: size.height);
+    }
+    final bodyIdx = base.indexWhere(isBlockBody);
+    if (bodyIdx < 0) return;
+    final undoStack = _pushUndo(s, fileName, page);
+
+    final baseZ = _nextZIndex(page);
+    final pen = s.toolSettings.color;
+    final copies = remapConnectors(base, [
+      for (var i = 0; i < placed.length; i++)
+        tintElement(placed[i], pen).map(
+          unknown: (u) => u.copyWith(id: const Uuid().v4(), zIndex: baseZ + i),
+          stroke: (e) => ContentElement.stroke(
+              id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
+          text: (e) => ContentElement.text(
+              id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
+          image: (e) => ContentElement.image(
+              id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
+          shape: (e) => ContentElement.shape(
+              id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
+          math: (e) => ContentElement.math(
+              id: const Uuid().v4(), zIndex: baseZ + i, data: e.data),
+        )
+    ]);
+    final bodyCopy = copies[bodyIdx];
+    final arrow = ContentElement.shape(
+      id: const Uuid().v4(),
+      zIndex: baseZ + copies.length,
+      data: ShapeData(
+        shapeType: 'arrow',
+        x1: 0, y1: 0, x2: 0, y2: 0, // placed by the snap below
+        strokeColor: pen,
+        strokeWidth: body.mapOrNull(
+                shape: (b) => b.data.strokeWidth,
+                stroke: (b) => b.data.baseWidth) ??
+            2.0,
+        startId: elementId(body),
+        endId: elementId(bodyCopy),
+        elbow: 'h',
+      ),
+    );
+    final content = _snapConnectors(
+        [...page.layers.content, ...copies, arrow],
+        {elementId(body), elementId(bodyCopy)});
+
+    final updatedPages = Map<String, PageData>.from(s.pages);
+    updatedPages[fileName] = carryPdfTextLayer(page, PageData(
+      pageId: page.pageId, pageNumber: page.pageNumber,
+      width: page.width, height: page.height,
+      layers: RenderingLayers(background: page.layers.background, content: content),
+      assetReferences: page.assetReferences,
+      createdAt: page.createdAt, modifiedAt: DateTime.now(),
+    ));
+    final copyIds = [for (final e in copies) elementId(e)];
+    state = s.copyWith(
+      pages: updatedPages,
+      undoStack: undoStack,
+      redoStack: [],
+      isDirty: true,
+      // Keep the kind of selection the user had, moved onto the copy.
+      selectedElementId: s.lassoSelection == null ? copyIds.first : null,
+      lassoSelection: s.lassoSelection == null
+          ? null
+          : LassoSelection(
+              selectedIds: copyIds, bounds: newBounds),
+      clearLasso: s.lassoSelection == null,
+    );
+  }
+
+  /// An attached connector as an elbow (right angles) or a straight line.
+  void toggleConnectorElbow(String id) {
+    final s = state;
+    final page = s?.currentPage;
+    if (s == null || page == null) return;
+    final byId = {for (final e in page.layers.content) elementId(e): e};
+    final target = byId[id];
+    final d = target?.mapOrNull(shape: (x) => x.data);
+    if (d == null || !isConnector(d)) return;
+    final undoStack = _pushUndo(s, s.currentPageFileName, page);
+    // Straight needs its ends back on the ray between the block centres;
+    // elbow gets its side midpoints from the snap.
+    final next = _snapConnector(
+        d.elbow == null ? d.copyWith(elbow: 'h') : d.copyWith(elbow: null), byId);
+    final content = [
+      for (final e in page.layers.content)
+        elementId(e) == id
+            ? ContentElement.shape(id: id, zIndex: e.mapOrNull(shape: (x) => x.zIndex)!, data: next)
+            : e
+    ];
+    final updatedPages = Map<String, PageData>.from(s.pages);
+    updatedPages[s.currentPageFileName] = carryPdfTextLayer(page, PageData(
+      pageId: page.pageId, pageNumber: page.pageNumber,
+      width: page.width, height: page.height,
+      layers: RenderingLayers(background: page.layers.background, content: content),
+      assetReferences: page.assetReferences,
+      createdAt: page.createdAt, modifiedAt: DateTime.now(),
+    ));
+    state = s.copyWith(
+        pages: updatedPages, undoStack: undoStack, redoStack: [], isDirty: true);
+  }
+
+  /// True when the lasso selection holds at least two blocks to line up.
+  bool get canTidySelection =>
+      (_currentSelection()?.$1.where(isBlockBody).length ?? 0) >= 2;
+
+  /// Lines the selected blocks up: blocks that are roughly in one row share
+  /// a centre line, blocks roughly in one column share another. Anything
+  /// else selected that sits inside a block (handwriting, labels) moves with
+  /// it, and attached arrows follow. "Roughly" is within 60% of the typical
+  /// block height / width, so deliberate offsets of a whole block survive.
+  void tidySelection() {
+    final cur = _currentSelection();
+    final sel = state?.lassoSelection;
+    if (state == null || cur == null || sel == null) return;
+    final s = state!;
+    final page = s.currentPage!;
+    final blocks = {
+      for (final e in cur.$1)
+        if (isBlockBody(e)) elementId(e): blockOutlineRect(e)!
+    };
+    if (blocks.length < 2) return;
+
+    final delta = tidyDeltas(blocks);
+    if (delta.values.every((d) => d.distance < 0.01)) return;
+
+    // Each non-block, non-arrow element rides with the smallest block it sits in.
+    Offset moveOf(ContentElement e) {
+      final id = elementId(e);
+      if (delta.containsKey(id)) return delta[id]!;
+      if (e is ShapeElement && isConnector(e.data)) return Offset.zero;
+      final b = _getElementBounds(e);
+      return b == null ? Offset.zero : hostDelta(b, blocks, delta);
+    }
+
+    final undoStack = _pushUndo(s, s.currentPageFileName, page);
+    final selected = sel.selectedIds.toSet();
+    var content = [
+      for (final e in page.layers.content)
+        if (selected.contains(elementId(e)) && moveOf(e) != Offset.zero)
+          _translateElement(e, moveOf(e))
+        else
+          e
+    ];
+    content = _snapConnectors(content, blocks.keys.toSet());
+
+    Rect? bounds;
+    for (final e in content) {
+      if (!selected.contains(elementId(e))) continue;
+      final b = _getElementBounds(e);
+      if (b != null) bounds = bounds == null ? b : bounds.expandToInclude(b);
+    }
+    final updatedPages = Map<String, PageData>.from(s.pages);
+    updatedPages[s.currentPageFileName] = carryPdfTextLayer(page, PageData(
+      pageId: page.pageId, pageNumber: page.pageNumber,
+      width: page.width, height: page.height,
+      layers: RenderingLayers(background: page.layers.background, content: content),
+      assetReferences: page.assetReferences,
+      createdAt: page.createdAt, modifiedAt: DateTime.now(),
+    ));
+    state = s.copyWith(
+      pages: updatedPages,
+      undoStack: undoStack,
+      redoStack: [],
+      isDirty: true,
+      lassoSelection:
+          LassoSelection(selectedIds: sel.selectedIds, bounds: bounds ?? sel.bounds),
+    );
+  }
+
   void applySelectionTransform() {
     if (state == null || state!.lassoSelection == null) return;
     final s = state!;
@@ -4282,7 +4560,7 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     final undoStack = _pushUndo(s, fileName, page);
     final center = sel.bounds.center;
 
-    final updatedContent = page.layers.content.map((element) {
+    final transformed = page.layers.content.map((element) {
       final id = element.map(unknown: (u) => u.id,
         stroke: (e) => e.id, text: (e) => e.id,
         image: (e) => e.id, shape: (e) => e.id,
@@ -4301,6 +4579,8 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
       }
       return updated;
     }).toList();
+    final moved = sel.selectedIds.toSet();
+    final updatedContent = _snapConnectors(transformed, moved);
 
     final updatedPage = carryPdfTextLayer(page, PageData(
       pageId: page.pageId, pageNumber: page.pageNumber,
@@ -4387,6 +4667,7 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
             toolType: e.data.toolType, color: e.data.color,
             baseWidth: e.data.baseWidth, isHighlighter: e.data.isHighlighter,
             opacity: e.data.opacity, timestamp: e.data.timestamp,
+            fillColor: e.data.fillColor,
           ),
         ),
         text: (e) => ContentElement.text(
@@ -4488,6 +4769,7 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
           toolType: e.data.toolType, color: e.data.color,
           baseWidth: e.data.baseWidth, isHighlighter: e.data.isHighlighter,
           opacity: e.data.opacity, timestamp: e.data.timestamp,
+          fillColor: e.data.fillColor,
         ),
       ),
       text: (e) {
@@ -5785,6 +6067,7 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
           toolType: e.data.toolType, color: e.data.color,
           baseWidth: e.data.baseWidth, isHighlighter: e.data.isHighlighter,
           opacity: e.data.opacity, timestamp: e.data.timestamp,
+          fillColor: e.data.fillColor,
         ),
       ),
       // copyWith preserves spans/fontFamily/flipHorizontal — a from-scratch
@@ -5852,6 +6135,7 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
           toolType: e.data.toolType, color: e.data.color,
           baseWidth: e.data.baseWidth * scale, isHighlighter: e.data.isHighlighter,
           opacity: e.data.opacity, timestamp: e.data.timestamp,
+          fillColor: e.data.fillColor,
         ),
       ),
       // copyWith preserves spans/fontFamily; scale also multiplies the
@@ -5929,11 +6213,12 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     // This avoids filling the undo stack with per-frame entries
     final undoStack = s.undoStack;
 
-    final updatedContent = page.layers.content.map((element) {
+    var updatedContent = page.layers.content.map((element) {
       final id = element.map(unknown: (u) => u.id, stroke: (e) => e.id, text: (e) => e.id, image: (e) => e.id, shape: (e) => e.id, math: (e) => e.id);
       if (id != elementId) return element;
       return _translateElement(element, delta);
     }).toList();
+    updatedContent = _snapConnectors(updatedContent, {elementId});
 
     final updatedPage = carryPdfTextLayer(page, PageData(
       pageId: page.pageId, pageNumber: page.pageNumber,
@@ -6057,11 +6342,28 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     if (page == null) return;
     final fileName = s.currentPageFileName;
 
-    final updatedContent = page.layers.content.map((element) {
+    var updatedContent = page.layers.content.map((element) {
       final id = element.map(unknown: (u) => u.id, stroke: (e) => e.id, text: (e) => e.id, image: (e) => e.id, shape: (e) => e.id, math: (e) => e.id);
       if (id != elementId) return element;
       return element.map(unknown: (u) => u,
-        stroke: (e) => e as ContentElement, // can't resize strokes this way
+        // Only closed block outlines resize: their points are remapped from
+        // the old box to the new one. Freehand ink is left alone.
+        stroke: (e) {
+          if (!isBlockBody(element)) return e as ContentElement;
+          final o = pointsRect(e.data.points);
+          double map(double v, double o0, double ow, double n0, double nw) =>
+              ow <= 0 ? n0 : n0 + (v - o0) / ow * nw;
+          return ContentElement.stroke(
+            id: e.id, zIndex: e.zIndex,
+            data: e.data.copyWith(points: [
+              for (final p in e.data.points)
+                p.copyWith(
+                  x: map(p.x, o.left, o.width, newBounds.left, newBounds.width),
+                  y: map(p.y, o.top, o.height, newBounds.top, newBounds.height),
+                )
+            ]),
+          );
+        },
         // Text resize from the smart-resize flow goes through
         // resizeTextElement; this arm is the generic fallback. copyWith
         // preserves spans/fontFamily, and height is re-fit to the new
@@ -6134,6 +6436,7 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
         },
       );
     }).toList();
+    updatedContent = _snapConnectors(updatedContent, {elementId});
 
     final updatedPage = carryPdfTextLayer(page, PageData(
       pageId: page.pageId, pageNumber: page.pageNumber,
@@ -7055,6 +7358,8 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
         math: (e) => ContentElement.math(id: newId, zIndex: z, data: e.data),
       ));
     }
+    newElements.replaceRange(
+        0, newElements.length, remapConnectors(clip.elements, newElements));
 
     // Materialize assets this notebook doesn't have (cross-notebook paste:
     // the clipboard carries the source notebook's bytes) and register the
@@ -7179,6 +7484,8 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
         math: (e) => ContentElement.math(id: newId, zIndex: z, data: e.data),
       ));
     }
+    newElements.replaceRange(
+        0, newElements.length, remapConnectors(originals, newElements));
 
     final updatedPage = carryPdfTextLayer(page, PageData(
       pageId: page.pageId,
@@ -7483,7 +7790,8 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
       }
       final newId = const Uuid().v4();
       final z = baseZ + newElements.length;
-      newElements.add(_translateElement(element, offset).map(
+      newElements.add(_tintBuiltin(symbol, _translateElement(element, offset),
+              s.toolSettings.color).map(
         unknown: (u) => u.copyWith(id: newId, zIndex: z),
         stroke: (e) => ContentElement.stroke(id: newId, zIndex: z, data: e.data),
         text: (e) => ContentElement.text(id: newId, zIndex: z, data: e.data),

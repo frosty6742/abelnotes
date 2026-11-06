@@ -30,6 +30,14 @@ class ImageHandleOverlay extends StatefulWidget {
   /// box never changes the font, so these are the only way to scale glyphs.
   final VoidCallback? onFontSmaller;
   final VoidCallback? onFontLarger;
+  /// Block diagrams: add a block (with an attached arrow) to the right / below.
+  /// Attached arrows: switch between an elbow and a straight line.
+  final VoidCallback? onToggleElbow;
+  final bool isElbow;
+  final VoidCallback? onChainLeft;
+  final VoidCallback? onChainUp;
+  final VoidCallback? onChainRight;
+  final VoidCallback? onChainDown;
   final bool isLocked;
   final bool hasComment;
   final bool isFlipped;
@@ -59,6 +67,12 @@ class ImageHandleOverlay extends StatefulWidget {
     this.onFlipHorizontal,
     this.onFontSmaller,
     this.onFontLarger,
+    this.onToggleElbow,
+    this.isElbow = false,
+    this.onChainLeft,
+    this.onChainUp,
+    this.onChainRight,
+    this.onChainDown,
     this.isLocked = false,
     this.hasComment = false,
     this.isFlipped = false,
@@ -363,6 +377,25 @@ class _ImageHandleOverlayState extends State<ImageHandleOverlay> {
                   widget.onFontSmaller!, l10n.imgFontSmaller),
               _actionBtn(Icons.text_increase_rounded, p.ink2,
                   widget.onFontLarger!, l10n.imgFontLarger),
+              _divider(),
+            ],
+            if (widget.onToggleElbow != null) ...[
+              _actionBtn(
+                  widget.isElbow ? Icons.trending_flat_rounded : Icons.turn_right_rounded,
+                  p.ink2,
+                  widget.onToggleElbow!,
+                  l10n.csToggleElbow),
+              _divider(),
+            ],
+            if (widget.onChainRight != null && !widget.isLocked) ...[
+              _actionBtn(Icons.arrow_back_rounded, p.ink2,
+                  widget.onChainLeft!, l10n.csChainLeft),
+              _actionBtn(Icons.arrow_upward_rounded, p.ink2,
+                  widget.onChainUp!, l10n.csChainUp),
+              _actionBtn(Icons.arrow_downward_rounded, p.ink2,
+                  widget.onChainDown!, l10n.csChainDown),
+              _actionBtn(Icons.arrow_forward_rounded, p.ink2,
+                  widget.onChainRight!, l10n.csChainRight),
               _divider(),
             ],
             if (widget.onCrop != null && !widget.isLocked) ...[

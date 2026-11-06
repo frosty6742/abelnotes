@@ -328,6 +328,27 @@ class AppLocalizationsPt extends AppLocalizations {
   String get csDuplicate => 'Duplicar';
 
   @override
+  String get csChainRight => 'Bloco à direita';
+
+  @override
+  String get csChainDown => 'Bloco abaixo';
+
+  @override
+  String get csChainLeft => 'Bloco à esquerda';
+
+  @override
+  String get csChainUp => 'Bloco acima';
+
+  @override
+  String get csChainSame => 'Igual a este bloco';
+
+  @override
+  String get csTidy => 'Alinhar';
+
+  @override
+  String get csToggleElbow => 'Cotovelo / linha reta';
+
+  @override
   String get csSelectionDuplicated => 'Seleção duplicada';
 
   @override

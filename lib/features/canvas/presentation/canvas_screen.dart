@@ -39,6 +39,8 @@ import 'package:abelnotes/features/canvas/presentation/image_handle_overlay.dart
 import 'package:abelnotes/features/canvas/presentation/remote_changes_banner.dart';
 import 'package:abelnotes/features/canvas/presentation/conflict_resolution_screen.dart';
 import 'package:abelnotes/features/canvas/presentation/symbol_library_panel.dart';
+import 'package:abelnotes/core/services/block_diagram_symbols.dart';
+import 'package:abelnotes/core/services/block_diagram_connectors.dart';
 import 'package:abelnotes/features/canvas/presentation/text_editor_dialog.dart';
 import 'package:abelnotes/shared/models/ncnote_format.dart';
 import 'package:abelnotes/shared/utils/html_text.dart';
@@ -3827,7 +3829,11 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
     switch (sh.shapeType) {
       case 'line':
       case 'arrow':
-        return _distToSegment(q, Offset(sh.x1, sh.y1), Offset(sh.x2, sh.y2));
+        final route = connectorRoute(sh);
+        return [
+          for (var i = 0; i + 1 < route.length; i++)
+            _distToSegment(q, route[i], route[i + 1])
+        ].reduce(min);
       case 'circle':
         // Distance to the inscribed ellipse the painter actually draws.
         // Radial approximation: scale the probe into unit-circle space,
@@ -3930,7 +3936,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
         return id;
       }
     }
-    return null;
+    return closedBlockAt(page.layers.content, pagePos);
   }
 
   /// Find an image or shape element at the given page position (ignoring strokes/text).
@@ -3972,7 +3978,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
         return id;
       }
     }
-    return null;
+    return imagesOnly ? null : closedBlockAt(page.layers.content, pagePos);
   }
 
   Rect? _getSelectedElementBounds(CanvasState state) {
@@ -6239,7 +6245,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
     Rect? pageBounds;
     double rotation = 0;
     element.map(unknown: (u) => u,
-      stroke: (_) {},
+      stroke: (_) => pageBounds = blockStrokeRect(element),
       text: (t) => pageBounds = Rect.fromLTWH(t.data.x, t.data.y, t.data.width, t.data.height),
       image: (i) {
         pageBounds = Rect.fromLTWH(i.data.x, i.data.y, i.data.width, i.data.height);
@@ -6354,6 +6360,27 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
                 n.resizeTextElement(elementId, fontScale: 1.15);
               }
             : null,
+        onToggleElbow: element.mapOrNull(
+                    shape: (x) =>
+                        (x.data.shapeType == 'arrow' || x.data.shapeType == 'line') &&
+                        x.data.startId != null &&
+                        x.data.endId != null) ==
+                true
+            ? () => ref.read(canvasProvider.notifier).toggleConnectorElbow(elementId)
+            : null,
+        isElbow: element.mapOrNull(shape: (x) => x.data.elbow != null) ?? false,
+        onChainLeft: ref.read(canvasProvider.notifier).canChainSelection
+            ? () => _chainWithChoice(const Offset(-1, 0))
+            : null,
+        onChainUp: ref.read(canvasProvider.notifier).canChainSelection
+            ? () => _chainWithChoice(const Offset(0, -1))
+            : null,
+        onChainRight: ref.read(canvasProvider.notifier).canChainSelection
+            ? () => _chainWithChoice(const Offset(1, 0))
+            : null,
+        onChainDown: ref.read(canvasProvider.notifier).canChainSelection
+            ? () => _chainWithChoice(const Offset(0, 1))
+            : null,
         onDragStart: () {
           // Push undo once (Riverpod), then switch to the local notifier
           // for the rest of the gesture so per-frame moves don't fire
@@ -6367,7 +6394,18 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
         onMove: (delta) {
           final pageDelta = delta / (state.zoom * _getRenderScale(state, canvasSize));
           // Local-only — Riverpod catches up at pan-end via onDragEnd.
-          _elementTransformNotifier.translate(pageDelta);
+          // A block snaps into line with the other blocks' centres, so
+          // straight rows and columns are easy.
+          final orig = _elementTransformNotifier.origBounds;
+          final snapThreshold = 8 / (state.zoom * _getRenderScale(state, canvasSize));
+          final others = blockRects(
+              state.currentPage?.layers.content ?? const <ContentElement>[],
+              except: elementId);
+          _elementTransformNotifier.translate(pageDelta,
+              snap: orig == null || !isBlockBody(element)
+                  ? null
+                  : (raw) =>
+                      raw + centerAlignmentSnap(orig.shift(raw), others, snapThreshold));
         },
         onResize: (newBounds) {
           // Compute a CUMULATIVE scale relative to the element's bounds
@@ -6438,6 +6476,46 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
         } : null,
       ),
     ];
+  }
+
+  /// Block diagrams: after picking a direction, pick what to put there.
+  Future<void> _chainWithChoice(Offset dir) async {
+    final l10n = AppLocalizations.of(context);
+    final title = dir.dx > 0
+        ? l10n.csChainRight
+        : dir.dx < 0
+            ? l10n.csChainLeft
+            : dir.dy > 0
+                ? l10n.csChainDown
+                : l10n.csChainUp;
+    const icons = {
+      'block': Icons.crop_16_9_rounded,
+      'rounded': Icons.rounded_corner_rounded,
+      'terminator': Icons.stadium_outlined,
+      'decision': Icons.diamond_outlined,
+      'io': Icons.input_rounded,
+      'circle': Icons.circle_outlined,
+    };
+    Widget option(IconData icon, String text, Object value, BuildContext ctx) =>
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(ctx, value),
+          child: Row(children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(text)]),
+        );
+    final picked = await showDialog<Object>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(title),
+        children: [
+          option(Icons.copy_rounded, l10n.csChainSame, 'same', ctx),
+          for (final sym in blockDiagramBlocks())
+            option(icons[sym.id.split('-').last] ?? Icons.crop_square_rounded,
+                sym.name, sym, ctx),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    ref.read(canvasProvider.notifier).chainSelection(dir,
+        symbol: picked is ReusableSymbol ? picked : null);
   }
 
   Future<void> _showCommentDialog(String elementId) async {
@@ -6628,6 +6706,21 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
                 ref.read(canvasProvider.notifier).duplicateSelection();
                 _toast(AppLocalizations.of(context).csSelectionDuplicated);
               }),
+              // Block diagrams: line several selected blocks up in rows/columns.
+              if (ref.read(canvasProvider.notifier).canTidySelection)
+                _FloatingActionBtn(Icons.auto_fix_high_rounded, AppLocalizations.of(context).csTidy,
+                    () => ref.read(canvasProvider.notifier).tidySelection()),
+              // Block diagrams: clone the selected block with an attached arrow.
+              if (ref.read(canvasProvider.notifier).canChainSelection) ...[
+                _FloatingActionBtn(Icons.arrow_back_rounded, AppLocalizations.of(context).csChainLeft,
+                    () => _chainWithChoice(const Offset(-1, 0))),
+                _FloatingActionBtn(Icons.arrow_upward_rounded, AppLocalizations.of(context).csChainUp,
+                    () => _chainWithChoice(const Offset(0, -1))),
+                _FloatingActionBtn(Icons.arrow_downward_rounded, AppLocalizations.of(context).csChainDown,
+                    () => _chainWithChoice(const Offset(0, 1))),
+                _FloatingActionBtn(Icons.arrow_forward_rounded, AppLocalizations.of(context).csChainRight,
+                    () => _chainWithChoice(const Offset(1, 0))),
+              ],
               // Quick color picker — restores the workflow from the
               // previous UI (select stroke → tap color to recolor).
               _FloatingActionBtn(Icons.palette_rounded, AppLocalizations.of(context).csChangeColor,
@@ -7079,7 +7172,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
     if (element == null) return;
     Rect? origBounds;
     element.map(unknown: (u) => u,
-      stroke: (_) {},
+      stroke: (_) => origBounds = blockStrokeRect(element),
       text: (t) =>
           origBounds = Rect.fromLTWH(t.data.x, t.data.y, t.data.width, t.data.height),
       image: (i) =>

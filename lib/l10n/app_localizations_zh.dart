@@ -317,6 +317,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get csDuplicate => '复制一份';
 
   @override
+  String get csChainRight => '右侧添加方块';
+
+  @override
+  String get csChainDown => '下方添加方块';
+
+  @override
+  String get csChainLeft => '左侧添加方块';
+
+  @override
+  String get csChainUp => '上方添加方块';
+
+  @override
+  String get csChainSame => '与此方块相同';
+
+  @override
+  String get csTidy => '整理对齐';
+
+  @override
+  String get csToggleElbow => '折线 / 直线';
+
+  @override
   String get csSelectionDuplicated => '已复制所选内容';
 
   @override

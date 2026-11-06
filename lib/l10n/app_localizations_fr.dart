@@ -330,6 +330,27 @@ class AppLocalizationsFr extends AppLocalizations {
   String get csDuplicate => 'Dupliquer';
 
   @override
+  String get csChainRight => 'Bloc à droite';
+
+  @override
+  String get csChainDown => 'Bloc en dessous';
+
+  @override
+  String get csChainLeft => 'Bloc à gauche';
+
+  @override
+  String get csChainUp => 'Bloc au-dessus';
+
+  @override
+  String get csChainSame => 'Comme ce bloc';
+
+  @override
+  String get csTidy => 'Aligner';
+
+  @override
+  String get csToggleElbow => 'Coude / ligne droite';
+
+  @override
   String get csSelectionDuplicated => 'Sélection dupliquée';
 
   @override

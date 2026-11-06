@@ -538,6 +538,10 @@ class ElementTransformNotifier extends ChangeNotifier {
   // semantics) overwrote each tick, making the image jiggle around 110%
   // regardless of how far the user dragged.
   Rect? _origBounds;
+  // Where the pointer has really taken the element, before any snapping.
+  // [_dragOffset] is what is shown; tracking the raw offset separately is
+  // what lets a snap release again instead of the element sticking.
+  Offset _rawDrag = Offset.zero;
 
   bool get isActive => _elementId != null;
   String? get elementId => _elementId;
@@ -551,15 +555,18 @@ class ElementTransformNotifier extends ChangeNotifier {
     _elementId = elementId;
     _origBounds = origBounds;
     _dragOffset = Offset.zero;
+    _rawDrag = Offset.zero;
     _rotationDelta = 0.0;
     _scaleW = 1.0;
     _scaleH = 1.0;
     notifyListeners();
   }
 
-  void translate(Offset delta) {
+  /// Moves by [delta]. With [snap], the shown offset is `snap(raw offset)`.
+  void translate(Offset delta, {Offset Function(Offset raw)? snap}) {
     if (_elementId == null) return;
-    _dragOffset += delta;
+    _rawDrag += delta;
+    _dragOffset = snap == null ? _rawDrag : snap(_rawDrag);
     notifyListeners();
   }
 
@@ -706,4 +713,19 @@ class LassoPathNotifier extends ChangeNotifier {
     _active = false;
     notifyListeners();
   }
+}
+
+
+/// How far to nudge [moving] so its centre lines up with the centre of any
+/// of [others] (same column and/or same row) that is within [threshold] on
+/// that axis. Zero on an axis with nothing close enough; the nearest wins.
+Offset centerAlignmentSnap(Rect moving, Iterable<Rect> others, double threshold) {
+  double? dx, dy;
+  for (final o in others) {
+    final ex = o.center.dx - moving.center.dx;
+    final ey = o.center.dy - moving.center.dy;
+    if (ex.abs() <= threshold && (dx == null || ex.abs() < dx.abs())) dx = ex;
+    if (ey.abs() <= threshold && (dy == null || ey.abs() < dy.abs())) dy = ey;
+  }
+  return Offset(dx ?? 0, dy ?? 0);
 }

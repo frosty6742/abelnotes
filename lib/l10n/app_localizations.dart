@@ -618,6 +618,48 @@ abstract class AppLocalizations {
   /// **'Duplica'**
   String get csDuplicate;
 
+  /// No description provided for @csChainRight.
+  ///
+  /// In it, this message translates to:
+  /// **'Blocco a destra'**
+  String get csChainRight;
+
+  /// No description provided for @csChainDown.
+  ///
+  /// In it, this message translates to:
+  /// **'Blocco sotto'**
+  String get csChainDown;
+
+  /// No description provided for @csChainLeft.
+  ///
+  /// In it, this message translates to:
+  /// **'Blocco a sinistra'**
+  String get csChainLeft;
+
+  /// No description provided for @csChainUp.
+  ///
+  /// In it, this message translates to:
+  /// **'Blocco sopra'**
+  String get csChainUp;
+
+  /// No description provided for @csChainSame.
+  ///
+  /// In it, this message translates to:
+  /// **'Come questo blocco'**
+  String get csChainSame;
+
+  /// No description provided for @csTidy.
+  ///
+  /// In it, this message translates to:
+  /// **'Allinea'**
+  String get csTidy;
+
+  /// No description provided for @csToggleElbow.
+  ///
+  /// In it, this message translates to:
+  /// **'Gomito / linea retta'**
+  String get csToggleElbow;
+
   /// No description provided for @csSelectionDuplicated.
   ///
   /// In it, this message translates to:
