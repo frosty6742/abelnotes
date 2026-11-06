@@ -6366,6 +6366,8 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
                 n.resizeTextElement(elementId, fontScale: 1.15);
               }
             : null,
+        // Ink can't be rotated here (outline blocks are the only ink with handles).
+        showRotateHandle: element.mapOrNull(stroke: (_) => false) ?? true,
         onBlockAtStart:
             ref.read(canvasProvider.notifier).canAddBlockAtConnector(elementId, atEnd: false)
                 ? () => _blockAtConnector(elementId, atEnd: false)

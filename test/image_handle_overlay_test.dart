@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:abelnotes/features/canvas/presentation/image_handle_overlay.dart';
 import 'package:abelnotes/l10n/app_localizations.dart';
 
-Widget host(Rect bounds) => MaterialApp(
+Widget host(Rect bounds, {bool showRotateHandle = true}) => MaterialApp(
       localizationsDelegates: const [
         AppLocalizations.delegate,
         GlobalMaterialLocalizations.delegate,
@@ -31,6 +31,7 @@ Widget host(Rect bounds) => MaterialApp(
               onDelete: () {},
               onDeselect: () {},
               onBlockAtEnd: () {},
+              showRotateHandle: showRotateHandle,
             ),
           ]),
         ),
@@ -56,5 +57,12 @@ void main() {
   testWidgets('the grown box shows the action bar, including block-at-tip', (tester) async {
     await tester.pumpWidget(host(handleRect(verticalArrow)));
     expect(find.byTooltip("Block at the arrow's end"), findsOneWidget);
+  });
+  testWidgets('the rotate handle is there by default and can be hidden', (tester) async {
+    const box = Rect.fromLTWH(100, 100, 120, 60);
+    await tester.pumpWidget(host(box));
+    expect(find.byIcon(Icons.rotate_right_rounded), findsOneWidget);
+    await tester.pumpWidget(host(box, showRotateHandle: false));
+    expect(find.byIcon(Icons.rotate_right_rounded), findsNothing);
   });
 }

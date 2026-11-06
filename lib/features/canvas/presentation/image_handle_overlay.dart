@@ -58,6 +58,9 @@ class ImageHandleOverlay extends StatefulWidget {
   /// — text is a reflow frame whose height the user can extend past the content
   /// (the host clamps so a drag never clips the text).
   final bool showEdgeHeightHandles;
+  /// False for things that can't rotate (a closed outline block), so the
+  /// handle isn't offered just to do nothing.
+  final bool showRotateHandle;
 
   const ImageHandleOverlay({
     super.key,
@@ -92,6 +95,7 @@ class ImageHandleOverlay extends StatefulWidget {
     this.hasComment = false,
     this.isFlipped = false,
     this.showEdgeHeightHandles = true,
+    this.showRotateHandle = true,
   });
 
   @override
@@ -208,7 +212,7 @@ class _ImageHandleOverlayState extends State<ImageHandleOverlay> {
           _buildEdgeHandle(Offset(bounds.right, bounds.center.dy), 'mr', p),
 
           // Rotate handle (above top center)
-          _buildRotateHandle(bounds, p),
+          if (widget.showRotateHandle) _buildRotateHandle(bounds, p),
         ],
 
         // Action buttons bar (above the rotate handle), clamped on-screen.
