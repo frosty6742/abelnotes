@@ -6285,7 +6285,13 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
 
     final screenTL = _toScreenCoords(pageBounds!.topLeft, state, canvasSize);
     final screenBR = _toScreenCoords(pageBounds!.bottomRight, state, canvasSize);
-    final screenRect = Rect.fromPoints(screenTL, screenBR);
+    final plainRect = Rect.fromPoints(screenTL, screenBR);
+    // A straight arrow/line can be zero wide or tall; give it a visible box.
+    final screenRect = element.mapOrNull(
+                shape: (x) => x.data.shapeType == 'arrow' || x.data.shapeType == 'line') ==
+            true
+        ? handleRect(plainRect)
+        : plainRect;
 
     // Determine if the selected element is an image (to show crop button)
     final isImage = element.map(unknown: (_) => false,

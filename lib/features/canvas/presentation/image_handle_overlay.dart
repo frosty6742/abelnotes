@@ -4,6 +4,16 @@ import 'package:abelnotes/l10n/app_localizations.dart';
 import 'package:abelnotes/ui/theme/hw_theme.dart';
 
 /// Overlay widget that shows move/resize/rotate/delete handles around a selected element.
+/// A straight horizontal or vertical arrow/line has no width or height, and
+/// the overlay draws nothing for a box under 1px — so a clicked arrow was
+/// selected but showed no handles and no action bar. This grows [r], about
+/// its centre, to at least [min] on each side so the selection is visible.
+Rect handleRect(Rect r, {double min = 28}) => Rect.fromCenter(
+      center: r.center,
+      width: max(r.width, min),
+      height: max(r.height, min),
+    );
+
 class ImageHandleOverlay extends StatefulWidget {
   final Rect bounds;
   final double rotation;
