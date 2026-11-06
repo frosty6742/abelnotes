@@ -95,6 +95,13 @@ class _SymbolLibraryPanelState extends ConsumerState<SymbolLibraryPanel> {
           for (int i = 1; i < e.data.points.length; i++) {
             path.lineTo(e.data.points[i].x, e.data.points[i].y);
           }
+          if (e.data.fillColor != null) {
+            canvas.drawPath(
+                path,
+                Paint()
+                  ..color = Color(e.data.fillColor!)
+                  ..style = PaintingStyle.fill);
+          }
           canvas.drawPath(path, paint);
         },
         shape: (e) {

@@ -3518,7 +3518,11 @@ mixin _$StrokeData {
   double get baseWidth => throw _privateConstructorUsedError;
   bool get isHighlighter => throw _privateConstructorUsedError;
   double get opacity => throw _privateConstructorUsedError;
-  DateTime? get timestamp => throw _privateConstructorUsedError;
+  DateTime? get timestamp =>
+      throw _privateConstructorUsedError; // Interior colour of a closed outline (a block-diagram block); the
+// renderer fills the outline with it before inking the line. Null = the
+// plain ink every ordinary stroke is.
+  int? get fillColor => throw _privateConstructorUsedError;
 
   /// Serializes this StrokeData to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -3543,7 +3547,8 @@ abstract class $StrokeDataCopyWith<$Res> {
       double baseWidth,
       bool isHighlighter,
       double opacity,
-      DateTime? timestamp});
+      DateTime? timestamp,
+      int? fillColor});
 }
 
 /// @nodoc
@@ -3568,6 +3573,7 @@ class _$StrokeDataCopyWithImpl<$Res, $Val extends StrokeData>
     Object? isHighlighter = null,
     Object? opacity = null,
     Object? timestamp = freezed,
+    Object? fillColor = freezed,
   }) {
     return _then(_value.copyWith(
       points: null == points
@@ -3598,6 +3604,10 @@ class _$StrokeDataCopyWithImpl<$Res, $Val extends StrokeData>
           ? _value.timestamp
           : timestamp // ignore: cast_nullable_to_non_nullable
               as DateTime?,
+      fillColor: freezed == fillColor
+          ? _value.fillColor
+          : fillColor // ignore: cast_nullable_to_non_nullable
+              as int?,
     ) as $Val);
   }
 }
@@ -3617,7 +3627,8 @@ abstract class _$$StrokeDataImplCopyWith<$Res>
       double baseWidth,
       bool isHighlighter,
       double opacity,
-      DateTime? timestamp});
+      DateTime? timestamp,
+      int? fillColor});
 }
 
 /// @nodoc
@@ -3640,6 +3651,7 @@ class __$$StrokeDataImplCopyWithImpl<$Res>
     Object? isHighlighter = null,
     Object? opacity = null,
     Object? timestamp = freezed,
+    Object? fillColor = freezed,
   }) {
     return _then(_$StrokeDataImpl(
       points: null == points
@@ -3670,6 +3682,10 @@ class __$$StrokeDataImplCopyWithImpl<$Res>
           ? _value.timestamp
           : timestamp // ignore: cast_nullable_to_non_nullable
               as DateTime?,
+      fillColor: freezed == fillColor
+          ? _value.fillColor
+          : fillColor // ignore: cast_nullable_to_non_nullable
+              as int?,
     ));
   }
 }
@@ -3684,7 +3700,8 @@ class _$StrokeDataImpl implements _StrokeData {
       this.baseWidth = 2.0,
       this.isHighlighter = false,
       this.opacity = 1.0,
-      this.timestamp})
+      this.timestamp,
+      this.fillColor})
       : _points = points;
 
   factory _$StrokeDataImpl.fromJson(Map<String, dynamic> json) =>
@@ -3716,10 +3733,15 @@ class _$StrokeDataImpl implements _StrokeData {
   final double opacity;
   @override
   final DateTime? timestamp;
+// Interior colour of a closed outline (a block-diagram block); the
+// renderer fills the outline with it before inking the line. Null = the
+// plain ink every ordinary stroke is.
+  @override
+  final int? fillColor;
 
   @override
   String toString() {
-    return 'StrokeData(points: $points, toolType: $toolType, color: $color, baseWidth: $baseWidth, isHighlighter: $isHighlighter, opacity: $opacity, timestamp: $timestamp)';
+    return 'StrokeData(points: $points, toolType: $toolType, color: $color, baseWidth: $baseWidth, isHighlighter: $isHighlighter, opacity: $opacity, timestamp: $timestamp, fillColor: $fillColor)';
   }
 
   @override
@@ -3737,7 +3759,9 @@ class _$StrokeDataImpl implements _StrokeData {
                 other.isHighlighter == isHighlighter) &&
             (identical(other.opacity, opacity) || other.opacity == opacity) &&
             (identical(other.timestamp, timestamp) ||
-                other.timestamp == timestamp));
+                other.timestamp == timestamp) &&
+            (identical(other.fillColor, fillColor) ||
+                other.fillColor == fillColor));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -3750,7 +3774,8 @@ class _$StrokeDataImpl implements _StrokeData {
       baseWidth,
       isHighlighter,
       opacity,
-      timestamp);
+      timestamp,
+      fillColor);
 
   /// Create a copy of StrokeData
   /// with the given fields replaced by the non-null parameter values.
@@ -3776,7 +3801,8 @@ abstract class _StrokeData implements StrokeData {
       final double baseWidth,
       final bool isHighlighter,
       final double opacity,
-      final DateTime? timestamp}) = _$StrokeDataImpl;
+      final DateTime? timestamp,
+      final int? fillColor}) = _$StrokeDataImpl;
 
   factory _StrokeData.fromJson(Map<String, dynamic> json) =
       _$StrokeDataImpl.fromJson;
@@ -3794,7 +3820,12 @@ abstract class _StrokeData implements StrokeData {
   @override
   double get opacity;
   @override
-  DateTime? get timestamp;
+  DateTime?
+      get timestamp; // Interior colour of a closed outline (a block-diagram block); the
+// renderer fills the outline with it before inking the line. Null = the
+// plain ink every ordinary stroke is.
+  @override
+  int? get fillColor;
 
   /// Create a copy of StrokeData
   /// with the given fields replaced by the non-null parameter values.
@@ -5492,7 +5523,16 @@ mixin _$ShapeData {
 // Cardinal triangles leave this empty (the bbox + rotation already
 // describes them exactly via the cardinal-special-case render path).
 // Stored on resize via affine bbox-to-bbox vertex remap.
-  List<double> get vertices => throw _privateConstructorUsedError;
+  List<double> get vertices =>
+      throw _privateConstructorUsedError; // Connector binding for 'arrow'/'line': ids of the block elements the
+// two ends are attached to. Moving a block re-snaps the end to its edge.
+// A missing target (deleted block) just leaves the end where it is.
+  String? get startId => throw _privateConstructorUsedError;
+  String? get endId =>
+      throw _privateConstructorUsedError; // 'h' / 'v': draw the connector as an elbow (two right-angle bends,
+// horizontal-first / vertical-first) instead of a straight segment.
+// Null = straight. Re-derived from the block positions on every snap.
+  String? get elbow => throw _privateConstructorUsedError;
 
   /// Serializes this ShapeData to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -5520,7 +5560,10 @@ abstract class $ShapeDataCopyWith<$Res> {
       bool isHighlighter,
       int? fillColor,
       double rotation,
-      List<double> vertices});
+      List<double> vertices,
+      String? startId,
+      String? endId,
+      String? elbow});
 }
 
 /// @nodoc
@@ -5549,6 +5592,9 @@ class _$ShapeDataCopyWithImpl<$Res, $Val extends ShapeData>
     Object? fillColor = freezed,
     Object? rotation = null,
     Object? vertices = null,
+    Object? startId = freezed,
+    Object? endId = freezed,
+    Object? elbow = freezed,
   }) {
     return _then(_value.copyWith(
       shapeType: null == shapeType
@@ -5595,6 +5641,18 @@ class _$ShapeDataCopyWithImpl<$Res, $Val extends ShapeData>
           ? _value.vertices
           : vertices // ignore: cast_nullable_to_non_nullable
               as List<double>,
+      startId: freezed == startId
+          ? _value.startId
+          : startId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      endId: freezed == endId
+          ? _value.endId
+          : endId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      elbow: freezed == elbow
+          ? _value.elbow
+          : elbow // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -5618,7 +5676,10 @@ abstract class _$$ShapeDataImplCopyWith<$Res>
       bool isHighlighter,
       int? fillColor,
       double rotation,
-      List<double> vertices});
+      List<double> vertices,
+      String? startId,
+      String? endId,
+      String? elbow});
 }
 
 /// @nodoc
@@ -5645,6 +5706,9 @@ class __$$ShapeDataImplCopyWithImpl<$Res>
     Object? fillColor = freezed,
     Object? rotation = null,
     Object? vertices = null,
+    Object? startId = freezed,
+    Object? endId = freezed,
+    Object? elbow = freezed,
   }) {
     return _then(_$ShapeDataImpl(
       shapeType: null == shapeType
@@ -5691,6 +5755,18 @@ class __$$ShapeDataImplCopyWithImpl<$Res>
           ? _value._vertices
           : vertices // ignore: cast_nullable_to_non_nullable
               as List<double>,
+      startId: freezed == startId
+          ? _value.startId
+          : startId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      endId: freezed == endId
+          ? _value.endId
+          : endId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      elbow: freezed == elbow
+          ? _value.elbow
+          : elbow // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -5709,7 +5785,10 @@ class _$ShapeDataImpl implements _ShapeData {
       this.isHighlighter = false,
       this.fillColor,
       this.rotation = 0.0,
-      final List<double> vertices = const <double>[]})
+      final List<double> vertices = const <double>[],
+      this.startId,
+      this.endId,
+      this.elbow})
       : _vertices = vertices;
 
   factory _$ShapeDataImpl.fromJson(Map<String, dynamic> json) =>
@@ -5766,9 +5845,22 @@ class _$ShapeDataImpl implements _ShapeData {
     return EqualUnmodifiableListView(_vertices);
   }
 
+// Connector binding for 'arrow'/'line': ids of the block elements the
+// two ends are attached to. Moving a block re-snaps the end to its edge.
+// A missing target (deleted block) just leaves the end where it is.
+  @override
+  final String? startId;
+  @override
+  final String? endId;
+// 'h' / 'v': draw the connector as an elbow (two right-angle bends,
+// horizontal-first / vertical-first) instead of a straight segment.
+// Null = straight. Re-derived from the block positions on every snap.
+  @override
+  final String? elbow;
+
   @override
   String toString() {
-    return 'ShapeData(shapeType: $shapeType, x1: $x1, y1: $y1, x2: $x2, y2: $y2, strokeColor: $strokeColor, strokeWidth: $strokeWidth, isHighlighter: $isHighlighter, fillColor: $fillColor, rotation: $rotation, vertices: $vertices)';
+    return 'ShapeData(shapeType: $shapeType, x1: $x1, y1: $y1, x2: $x2, y2: $y2, strokeColor: $strokeColor, strokeWidth: $strokeWidth, isHighlighter: $isHighlighter, fillColor: $fillColor, rotation: $rotation, vertices: $vertices, startId: $startId, endId: $endId, elbow: $elbow)';
   }
 
   @override
@@ -5792,7 +5884,10 @@ class _$ShapeDataImpl implements _ShapeData {
                 other.fillColor == fillColor) &&
             (identical(other.rotation, rotation) ||
                 other.rotation == rotation) &&
-            const DeepCollectionEquality().equals(other._vertices, _vertices));
+            const DeepCollectionEquality().equals(other._vertices, _vertices) &&
+            (identical(other.startId, startId) || other.startId == startId) &&
+            (identical(other.endId, endId) || other.endId == endId) &&
+            (identical(other.elbow, elbow) || other.elbow == elbow));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -5809,7 +5904,10 @@ class _$ShapeDataImpl implements _ShapeData {
       isHighlighter,
       fillColor,
       rotation,
-      const DeepCollectionEquality().hash(_vertices));
+      const DeepCollectionEquality().hash(_vertices),
+      startId,
+      endId,
+      elbow);
 
   /// Create a copy of ShapeData
   /// with the given fields replaced by the non-null parameter values.
@@ -5839,7 +5937,10 @@ abstract class _ShapeData implements ShapeData {
       final bool isHighlighter,
       final int? fillColor,
       final double rotation,
-      final List<double> vertices}) = _$ShapeDataImpl;
+      final List<double> vertices,
+      final String? startId,
+      final String? endId,
+      final String? elbow}) = _$ShapeDataImpl;
 
   factory _ShapeData.fromJson(Map<String, dynamic> json) =
       _$ShapeDataImpl.fromJson;
@@ -5875,7 +5976,19 @@ abstract class _ShapeData implements ShapeData {
 // describes them exactly via the cardinal-special-case render path).
 // Stored on resize via affine bbox-to-bbox vertex remap.
   @override
-  List<double> get vertices;
+  List<double>
+      get vertices; // Connector binding for 'arrow'/'line': ids of the block elements the
+// two ends are attached to. Moving a block re-snaps the end to its edge.
+// A missing target (deleted block) just leaves the end where it is.
+  @override
+  String? get startId;
+  @override
+  String?
+      get endId; // 'h' / 'v': draw the connector as an elbow (two right-angle bends,
+// horizontal-first / vertical-first) instead of a straight segment.
+// Null = straight. Re-derived from the block positions on every snap.
+  @override
+  String? get elbow;
 
   /// Create a copy of ShapeData
   /// with the given fields replaced by the non-null parameter values.

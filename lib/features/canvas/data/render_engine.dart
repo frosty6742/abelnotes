@@ -103,6 +103,23 @@ List<Offset> triangleCorners(ShapeData sh) {
   return [rot(Offset(cx, t)), rot(Offset(l, b)), rot(Offset(r, b))];
 }
 
+/// The polyline a line/arrow is drawn along: the straight segment, or for an
+/// elbow connector a Z/S route with right angles halfway between the ends.
+/// An elbow whose ends line up degenerates to a straight run.
+List<Offset> connectorRoute(ShapeData d) {
+  final a = Offset(d.x1, d.y1), b = Offset(d.x2, d.y2);
+  switch (d.elbow) {
+    case 'h':
+      final mx = (a.dx + b.dx) / 2;
+      return [a, Offset(mx, a.dy), Offset(mx, b.dy), b];
+    case 'v':
+      final my = (a.dy + b.dy) / 2;
+      return [a, Offset(a.dx, my), Offset(b.dx, my), b];
+    default:
+      return [a, b];
+  }
+}
+
 /// True if [p] falls inside the body of [sh] (rotation-aware).
 ///
 /// Meaningful for shapes carrying a `fillColor`: their interior is visible
@@ -1193,6 +1210,20 @@ class CanvasRenderEngine extends CustomPainter {
 
     final color = Color(stroke.color);
 
+    // A closed block outline carries an interior fill, painted under the line.
+    if (stroke.fillColor != null && stroke.points.length > 2) {
+      final fill = Path()..moveTo(stroke.points[0].x, stroke.points[0].y);
+      for (int i = 1; i < stroke.points.length; i++) {
+        fill.lineTo(stroke.points[i].x, stroke.points[i].y);
+      }
+      canvas.drawPath(
+          fill..close(),
+          Paint()
+            ..color = Color(stroke.fillColor!)
+            ..style = PaintingStyle.fill
+            ..isAntiAlias = true);
+    }
+
     if (stroke.isHighlighter) {
       // Highlighter: flat width, semi-transparent, multiply blend
       final paint = Paint()
@@ -1799,10 +1830,10 @@ class CanvasRenderEngine extends CustomPainter {
         canvas.drawOval(oval, strokePaint);
         break;
       case 'line':
-        canvas.drawLine(Offset(shape.x1, shape.y1), Offset(shape.x2, shape.y2), strokePaint);
+        _paintConnectorLine(canvas, shape, strokePaint);
         break;
       case 'arrow':
-        canvas.drawLine(Offset(shape.x1, shape.y1), Offset(shape.x2, shape.y2), strokePaint);
+        _paintConnectorLine(canvas, shape, strokePaint);
         _paintArrowHead(canvas, shape, strokePaint);
         break;
       case 'triangle': {
@@ -1928,8 +1959,30 @@ class CanvasRenderEngine extends CustomPainter {
     canvas.restore();
   }
 
+  void _paintConnectorLine(Canvas canvas, ShapeData shape, Paint paint) {
+    if (shape.elbow == null) {
+      canvas.drawLine(Offset(shape.x1, shape.y1), Offset(shape.x2, shape.y2), paint);
+      return;
+    }
+    final route = connectorRoute(shape);
+    final path = Path()..moveTo(route.first.dx, route.first.dy);
+    for (final p in route.skip(1)) {
+      path.lineTo(p.dx, p.dy);
+    }
+    canvas.drawPath(path, paint..strokeJoin = StrokeJoin.round);
+  }
+
   void _paintArrowHead(Canvas canvas, ShapeData shape, Paint paint) {
-    final angle = atan2(shape.y2 - shape.y1, shape.x2 - shape.x1);
+    // Point along the last segment that has length (an elbow's final leg).
+    final route = connectorRoute(shape);
+    var from = route.first;
+    for (var i = route.length - 2; i >= 0; i--) {
+      if ((route.last - route[i]).distance > 0.01) {
+        from = route[i];
+        break;
+      }
+    }
+    final angle = atan2(shape.y2 - from.dy, shape.x2 - from.dx);
     const arrowLen = 15.0;
     const arrowAngle = 0.5;
     final path = Path()

@@ -132,7 +132,8 @@ A page has a `BackgroundLayer` (paper type, PDF page reference for annotated imp
           "baseWidth": 2.5,
           "isHighlighter": false,
           "opacity": 1.0,
-          "timestamp": "2026-03-31T15:28:00Z"
+          "timestamp": "2026-03-31T15:28:00Z",
+          "fillColor": null
         }
       },
       {
@@ -163,7 +164,8 @@ A page has a `BackgroundLayer` (paper type, PDF page reference for annotated imp
           "x1": 300.0, "y1": 400.0, "x2": 500.0, "y2": 500.0,
           "strokeColor": 4278190335, "strokeWidth": 2.0,
           "fillColor": null, "rotation": 0.0,
-          "vertices": null
+          "vertices": null,
+          "startId": null, "endId": null, "elbow": null
         }
       },
       {
@@ -199,6 +201,14 @@ A page has a `BackgroundLayer` (paper type, PDF page reference for annotated imp
 ```
 
 Only the LaTeX source is ever persisted for a `math` element — the rendered glyphs are rasterized at runtime from `latex`, not stored as pixels.
+
+### Block diagrams
+
+A few optional fields support block diagrams; all default to `null` and older readers ignore them.
+
+- **`stroke.fillColor`** — interior colour of a *closed* outline (first and last point meet). The renderer fills the outline with it, then inks the line.
+- **`shape.startId` / `shape.endId`** — on an `arrow` or `line`, the `id`s of the block elements its two ends are attached to. When a block moves or is resized the app re-snaps the attached end to the block's edge. An id that no longer exists just leaves that end where it is.
+- **`shape.elbow`** — `"h"` or `"v"` draws the connector with two right-angle bends (horizontal-first / vertical-first) instead of a straight segment. The x/y of both ends are still stored, so a reader that ignores `elbow` shows a straight line between the same two points.
 
 ### pdfTextLayer
 

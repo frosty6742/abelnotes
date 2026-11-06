@@ -296,6 +296,7 @@ _$StrokeDataImpl _$$StrokeDataImplFromJson(Map<String, dynamic> json) =>
       timestamp: json['timestamp'] == null
           ? null
           : DateTime.parse(json['timestamp'] as String),
+      fillColor: (json['fillColor'] as num?)?.toInt(),
     );
 
 Map<String, dynamic> _$$StrokeDataImplToJson(_$StrokeDataImpl instance) =>
@@ -307,6 +308,7 @@ Map<String, dynamic> _$$StrokeDataImplToJson(_$StrokeDataImpl instance) =>
       'isHighlighter': instance.isHighlighter,
       'opacity': instance.opacity,
       'timestamp': instance.timestamp?.toIso8601String(),
+      'fillColor': instance.fillColor,
     };
 
 _$StrokePointImpl _$$StrokePointImplFromJson(Map<String, dynamic> json) =>
@@ -458,6 +460,9 @@ _$ShapeDataImpl _$$ShapeDataImplFromJson(Map<String, dynamic> json) =>
               ?.map((e) => (e as num).toDouble())
               .toList() ??
           const <double>[],
+      startId: json['startId'] as String?,
+      endId: json['endId'] as String?,
+      elbow: json['elbow'] as String?,
     );
 
 Map<String, dynamic> _$$ShapeDataImplToJson(_$ShapeDataImpl instance) =>
@@ -473,6 +478,9 @@ Map<String, dynamic> _$$ShapeDataImplToJson(_$ShapeDataImpl instance) =>
       'fillColor': instance.fillColor,
       'rotation': instance.rotation,
       'vertices': instance.vertices,
+      'startId': instance.startId,
+      'endId': instance.endId,
+      'elbow': instance.elbow,
     };
 
 _$PdfTextLayerImpl _$$PdfTextLayerImplFromJson(Map<String, dynamic> json) =>

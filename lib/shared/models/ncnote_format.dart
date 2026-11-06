@@ -239,6 +239,10 @@ class StrokeData with _$StrokeData {
     @Default(false) bool isHighlighter,
     @Default(1.0) double opacity,
     DateTime? timestamp,
+    // Interior colour of a closed outline (a block-diagram block); the
+    // renderer fills the outline with it before inking the line. Null = the
+    // plain ink every ordinary stroke is.
+    int? fillColor,
   }) = _StrokeData;
 
   factory StrokeData.fromJson(Map<String, dynamic> json) =>
@@ -386,6 +390,15 @@ class ShapeData with _$ShapeData {
     // describes them exactly via the cardinal-special-case render path).
     // Stored on resize via affine bbox-to-bbox vertex remap.
     @Default(<double>[]) List<double> vertices,
+    // Connector binding for 'arrow'/'line': ids of the block elements the
+    // two ends are attached to. Moving a block re-snaps the end to its edge.
+    // A missing target (deleted block) just leaves the end where it is.
+    String? startId,
+    String? endId,
+    // 'h' / 'v': draw the connector as an elbow (two right-angle bends,
+    // horizontal-first / vertical-first) instead of a straight segment.
+    // Null = straight. Re-derived from the block positions on every snap.
+    String? elbow,
   }) = _ShapeData;
 
   factory ShapeData.fromJson(Map<String, dynamic> json) =>
