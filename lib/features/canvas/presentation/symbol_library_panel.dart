@@ -136,7 +136,8 @@ class _SymbolLibraryPanelState extends ConsumerState<SymbolLibraryPanel> {
               canvas.drawLine(Offset(d.x1, d.y1), Offset(d.x2, d.y2), paint);
               // Same open "V" head the page draws.
               final angle = atan2(d.y2 - d.y1, d.x2 - d.x1);
-              const arm = 3.75, spread = 0.5;
+              final arm = 3.75 * max(1.0, d.strokeWidth);
+              const spread = 0.5;
               canvas.drawPath(
                   Path()
                     ..moveTo(d.x2, d.y2)

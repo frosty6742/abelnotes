@@ -93,6 +93,7 @@
   "csChainArrow": "Arrow",
   "csTidy": "Tidy up",
   "csToggleElbow": "Elbow / straight line",
+  "csMoveArrowLeg": "Drag to move this part of the arrow",
   "csBlockAtStart": "Block at the arrow's start",
   "csBlockAtEnd": "Block at the arrow's end",
   "csSelectionDuplicated": "Selection duplicated",

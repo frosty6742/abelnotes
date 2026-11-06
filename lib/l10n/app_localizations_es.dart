@@ -352,6 +352,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get csToggleElbow => 'Codo / línea recta';
 
   @override
+  String get csMoveArrowLeg => 'Arrastra para mover este tramo de la flecha';
+
+  @override
   String get csBlockAtStart => 'Bloque al inicio de la flecha';
 
   @override

@@ -353,6 +353,10 @@ class AppLocalizationsIt extends AppLocalizations {
   String get csToggleElbow => 'Gomito / linea retta';
 
   @override
+  String get csMoveArrowLeg =>
+      'Trascina per spostare questo tratto della freccia';
+
+  @override
   String get csBlockAtStart => 'Blocco all\'inizio della freccia';
 
   @override

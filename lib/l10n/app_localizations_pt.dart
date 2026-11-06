@@ -352,6 +352,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get csToggleElbow => 'Cotovelo / linha reta';
 
   @override
+  String get csMoveArrowLeg => 'Arraste para mover este trecho da seta';
+
+  @override
   String get csBlockAtStart => 'Bloco no início da seta';
 
   @override

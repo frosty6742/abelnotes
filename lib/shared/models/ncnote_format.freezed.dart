@@ -5532,7 +5532,14 @@ mixin _$ShapeData {
       throw _privateConstructorUsedError; // 'h' / 'v': draw the connector as an elbow (two right-angle bends,
 // horizontal-first / vertical-first) instead of a straight segment.
 // Null = straight. Re-derived from the block positions on every snap.
-  String? get elbow => throw _privateConstructorUsedError;
+  String? get elbow =>
+      throw _privateConstructorUsedError; // Elbows: where the middle leg runs, as an offset from halfway between
+// the two ends (null = halfway). Written by every snap, so a detour
+// round a block is drawn without knowing about other blocks.
+  double? get lane =>
+      throw _privateConstructorUsedError; // Elbows: the middle leg the user dragged, as an offset from halfway
+// between the two blocks' centres. Null = routed automatically.
+  double? get bend => throw _privateConstructorUsedError;
 
   /// Serializes this ShapeData to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -5563,7 +5570,9 @@ abstract class $ShapeDataCopyWith<$Res> {
       List<double> vertices,
       String? startId,
       String? endId,
-      String? elbow});
+      String? elbow,
+      double? lane,
+      double? bend});
 }
 
 /// @nodoc
@@ -5595,6 +5604,8 @@ class _$ShapeDataCopyWithImpl<$Res, $Val extends ShapeData>
     Object? startId = freezed,
     Object? endId = freezed,
     Object? elbow = freezed,
+    Object? lane = freezed,
+    Object? bend = freezed,
   }) {
     return _then(_value.copyWith(
       shapeType: null == shapeType
@@ -5653,6 +5664,14 @@ class _$ShapeDataCopyWithImpl<$Res, $Val extends ShapeData>
           ? _value.elbow
           : elbow // ignore: cast_nullable_to_non_nullable
               as String?,
+      lane: freezed == lane
+          ? _value.lane
+          : lane // ignore: cast_nullable_to_non_nullable
+              as double?,
+      bend: freezed == bend
+          ? _value.bend
+          : bend // ignore: cast_nullable_to_non_nullable
+              as double?,
     ) as $Val);
   }
 }
@@ -5679,7 +5698,9 @@ abstract class _$$ShapeDataImplCopyWith<$Res>
       List<double> vertices,
       String? startId,
       String? endId,
-      String? elbow});
+      String? elbow,
+      double? lane,
+      double? bend});
 }
 
 /// @nodoc
@@ -5709,6 +5730,8 @@ class __$$ShapeDataImplCopyWithImpl<$Res>
     Object? startId = freezed,
     Object? endId = freezed,
     Object? elbow = freezed,
+    Object? lane = freezed,
+    Object? bend = freezed,
   }) {
     return _then(_$ShapeDataImpl(
       shapeType: null == shapeType
@@ -5767,6 +5790,14 @@ class __$$ShapeDataImplCopyWithImpl<$Res>
           ? _value.elbow
           : elbow // ignore: cast_nullable_to_non_nullable
               as String?,
+      lane: freezed == lane
+          ? _value.lane
+          : lane // ignore: cast_nullable_to_non_nullable
+              as double?,
+      bend: freezed == bend
+          ? _value.bend
+          : bend // ignore: cast_nullable_to_non_nullable
+              as double?,
     ));
   }
 }
@@ -5788,7 +5819,9 @@ class _$ShapeDataImpl implements _ShapeData {
       final List<double> vertices = const <double>[],
       this.startId,
       this.endId,
-      this.elbow})
+      this.elbow,
+      this.lane,
+      this.bend})
       : _vertices = vertices;
 
   factory _$ShapeDataImpl.fromJson(Map<String, dynamic> json) =>
@@ -5857,10 +5890,19 @@ class _$ShapeDataImpl implements _ShapeData {
 // Null = straight. Re-derived from the block positions on every snap.
   @override
   final String? elbow;
+// Elbows: where the middle leg runs, as an offset from halfway between
+// the two ends (null = halfway). Written by every snap, so a detour
+// round a block is drawn without knowing about other blocks.
+  @override
+  final double? lane;
+// Elbows: the middle leg the user dragged, as an offset from halfway
+// between the two blocks' centres. Null = routed automatically.
+  @override
+  final double? bend;
 
   @override
   String toString() {
-    return 'ShapeData(shapeType: $shapeType, x1: $x1, y1: $y1, x2: $x2, y2: $y2, strokeColor: $strokeColor, strokeWidth: $strokeWidth, isHighlighter: $isHighlighter, fillColor: $fillColor, rotation: $rotation, vertices: $vertices, startId: $startId, endId: $endId, elbow: $elbow)';
+    return 'ShapeData(shapeType: $shapeType, x1: $x1, y1: $y1, x2: $x2, y2: $y2, strokeColor: $strokeColor, strokeWidth: $strokeWidth, isHighlighter: $isHighlighter, fillColor: $fillColor, rotation: $rotation, vertices: $vertices, startId: $startId, endId: $endId, elbow: $elbow, lane: $lane, bend: $bend)';
   }
 
   @override
@@ -5887,7 +5929,9 @@ class _$ShapeDataImpl implements _ShapeData {
             const DeepCollectionEquality().equals(other._vertices, _vertices) &&
             (identical(other.startId, startId) || other.startId == startId) &&
             (identical(other.endId, endId) || other.endId == endId) &&
-            (identical(other.elbow, elbow) || other.elbow == elbow));
+            (identical(other.elbow, elbow) || other.elbow == elbow) &&
+            (identical(other.lane, lane) || other.lane == lane) &&
+            (identical(other.bend, bend) || other.bend == bend));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -5907,7 +5951,9 @@ class _$ShapeDataImpl implements _ShapeData {
       const DeepCollectionEquality().hash(_vertices),
       startId,
       endId,
-      elbow);
+      elbow,
+      lane,
+      bend);
 
   /// Create a copy of ShapeData
   /// with the given fields replaced by the non-null parameter values.
@@ -5940,7 +5986,9 @@ abstract class _ShapeData implements ShapeData {
       final List<double> vertices,
       final String? startId,
       final String? endId,
-      final String? elbow}) = _$ShapeDataImpl;
+      final String? elbow,
+      final double? lane,
+      final double? bend}) = _$ShapeDataImpl;
 
   factory _ShapeData.fromJson(Map<String, dynamic> json) =
       _$ShapeDataImpl.fromJson;
@@ -5988,7 +6036,16 @@ abstract class _ShapeData implements ShapeData {
 // horizontal-first / vertical-first) instead of a straight segment.
 // Null = straight. Re-derived from the block positions on every snap.
   @override
-  String? get elbow;
+  String?
+      get elbow; // Elbows: where the middle leg runs, as an offset from halfway between
+// the two ends (null = halfway). Written by every snap, so a detour
+// round a block is drawn without knowing about other blocks.
+  @override
+  double?
+      get lane; // Elbows: the middle leg the user dragged, as an offset from halfway
+// between the two blocks' centres. Null = routed automatically.
+  @override
+  double? get bend;
 
   /// Create a copy of ShapeData
   /// with the given fields replaced by the non-null parameter values.

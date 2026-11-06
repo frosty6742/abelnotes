@@ -666,6 +666,12 @@ abstract class AppLocalizations {
   /// **'Gomito / linea retta'**
   String get csToggleElbow;
 
+  /// No description provided for @csMoveArrowLeg.
+  ///
+  /// In it, this message translates to:
+  /// **'Trascina per spostare questo tratto della freccia'**
+  String get csMoveArrowLeg;
+
   /// No description provided for @csBlockAtStart.
   ///
   /// In it, this message translates to:
@@ -2217,7 +2223,7 @@ abstract class AppLocalizations {
   /// No description provided for @setPencilDoubleTapSub.
   ///
   /// In it, this message translates to:
-  /// **'Tocca due volte l'Apple Pencil per passare tra penna e gomma'**
+  /// **'Tocca due volte l\'Apple Pencil per passare tra penna e gomma'**
   String get setPencilDoubleTapSub;
 
   /// No description provided for @setFillShapes.

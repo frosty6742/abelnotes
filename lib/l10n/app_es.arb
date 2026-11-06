@@ -93,6 +93,7 @@
   "csChainArrow": "Flecha",
   "csTidy": "Alinear",
   "csToggleElbow": "Codo / línea recta",
+  "csMoveArrowLeg": "Arrastra para mover este tramo de la flecha",
   "csBlockAtStart": "Bloque al inicio de la flecha",
   "csBlockAtEnd": "Bloque en la punta de la flecha",
   "csSelectionDuplicated": "Selección duplicada",

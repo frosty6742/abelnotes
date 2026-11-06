@@ -3,6 +3,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:abelnotes/config/app_config.dart';
 import 'package:abelnotes/core/providers/canvas_provider.dart';
+import 'package:abelnotes/core/services/block_diagram_connectors.dart'
+    show connectorRoute, elementBounds, elementId, lassoPoint, lassoRect, liveConnectorRoutes;
+export 'package:abelnotes/core/services/block_diagram_connectors.dart' show connectorRoute;
 import 'package:abelnotes/features/canvas/data/math_rasterizer.dart';
 import 'package:abelnotes/features/canvas/data/zoom_snapshot.dart';
 import 'package:abelnotes/features/canvas/data/text_paragraph_factory.dart';
@@ -101,23 +104,6 @@ List<Offset> triangleCorners(ShapeData sh) {
   }
 
   return [rot(Offset(cx, t)), rot(Offset(l, b)), rot(Offset(r, b))];
-}
-
-/// The polyline a line/arrow is drawn along: the straight segment, or for an
-/// elbow connector a Z/S route with right angles halfway between the ends.
-/// An elbow whose ends line up degenerates to a straight run.
-List<Offset> connectorRoute(ShapeData d) {
-  final a = Offset(d.x1, d.y1), b = Offset(d.x2, d.y2);
-  switch (d.elbow) {
-    case 'h':
-      final mx = (a.dx + b.dx) / 2;
-      return [a, Offset(mx, a.dy), Offset(mx, b.dy), b];
-    case 'v':
-      final my = (a.dy + b.dy) / 2;
-      return [a, Offset(a.dx, my), Offset(b.dx, my), b];
-    default:
-      return [a, b];
-  }
 }
 
 /// True if [p] falls inside the body of [sh] (rotation-aware).
@@ -658,6 +644,11 @@ class CanvasRenderEngine extends CustomPainter {
 
     // 3. Content elements (cached sort to avoid O(n log n) per frame)
     final sortedContent = _getSortedContent(pageData.layers.content);
+    // Arrows attached to something being dragged follow it every frame.
+    final liveRoutes = hasTransform || liveEl != null
+        ? _liveConnectorRoutes(selectedIdsSet, selDragOffset, selRotation,
+            selScale, selCenter, hasTransform, liveEl)
+        : const <String, ShapeData>{};
 
     for (final element in sortedContent) {
       // Written by a newer build: kept on save, never painted.
@@ -680,6 +671,13 @@ class CanvasRenderEngine extends CustomPainter {
         id = element.id;
       }
       final isSelected = selectedIdsSet.contains(id);
+
+      // Already routed in page coordinates: drawn without the drag transform.
+      final route = liveRoutes[id];
+      if (route != null) {
+        _paintShape(canvas, route);
+        continue;
+      }
 
       final isLiveTarget = liveEl != null && liveEl.elementId == id;
 
@@ -752,6 +750,61 @@ class CanvasRenderEngine extends CustomPainter {
         canvas.restore();
       }
     }
+  }
+
+  /// Where each attached arrow is drawn while a lasso or single-element
+  /// drag is in flight: its ends moved like the dragged things, then put on
+  /// their blocks' live boxes by the same [snapConnector] the drop commits,
+  /// so nothing jumps on release. Only arrows touched by the drag appear.
+  ///
+  /// shortcut: a single element's live rotation is ignored here (blocks and
+  /// arrows are rarely rotated); the drop re-snaps it correctly anyway.
+  Map<String, ShapeData> _liveConnectorRoutes(
+    Set<String> selected,
+    Offset drag,
+    double rotation,
+    double scale,
+    Offset center,
+    bool hasTransform,
+    ({
+      String elementId,
+      Offset dragOffset,
+      double rotationDelta,
+      double scaleW,
+      double scaleH,
+    })? liveEl,
+  ) {
+    bool lassoMoving(String? id) => hasTransform && id != null && selected.contains(id);
+    bool singleMoving(String? id) => liveEl != null && id == liveEl.elementId;
+    Offset lassoMove(Offset p) => lassoPoint(p, center, scale, rotation, drag);
+
+    Rect? liveBounds(ContentElement e) {
+      final b = elementBounds(e);
+      if (b == null) return null;
+      final id = elementId(e);
+      if (singleMoving(id)) {
+        // Resize keeps the top-left; the drag offset carries the rest.
+        return Rect.fromLTWH(b.left + liveEl!.dragOffset.dx, b.top + liveEl.dragOffset.dy,
+            b.width * liveEl.scaleW, b.height * liveEl.scaleH);
+      }
+      if (lassoMoving(id)) {
+        return lassoRect(b, center, scale, rotation, drag);
+      }
+      return b;
+    }
+
+    return liveConnectorRoutes(
+      pageData.layers.content,
+      (id) => lassoMoving(id) || singleMoving(id),
+      (d, p) {
+        if (liveEl == null) return lassoMove(p);
+        final tl = Offset(min(d.x1, d.x2), min(d.y1, d.y2));
+        return tl +
+            Offset((p.dx - tl.dx) * liveEl.scaleW, (p.dy - tl.dy) * liveEl.scaleH) +
+            liveEl.dragOffset;
+      },
+      liveBounds,
+    );
   }
 
   /// Geometric center of an element on the page (used as the rotation /
@@ -1983,7 +2036,9 @@ class CanvasRenderEngine extends CustomPainter {
       }
     }
     final angle = atan2(shape.y2 - from.dy, shape.x2 - from.dx);
-    const arrowLen = 3.75; // a quarter of the old 15: short, tidy arms
+    // Short, tidy arms on thin library arrows; they grow with the pen so a
+    // thick arrow's head isn't swallowed by its own line.
+    final arrowLen = 3.75 * max(1.0, shape.strokeWidth);
     const arrowAngle = 0.5;
     final path = Path()
       ..moveTo(shape.x2, shape.y2)

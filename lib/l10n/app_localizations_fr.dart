@@ -354,6 +354,10 @@ class AppLocalizationsFr extends AppLocalizations {
   String get csToggleElbow => 'Coude / ligne droite';
 
   @override
+  String get csMoveArrowLeg =>
+      'Faites glisser pour déplacer ce segment de la flèche';
+
+  @override
   String get csBlockAtStart => 'Bloc au début de la flèche';
 
   @override

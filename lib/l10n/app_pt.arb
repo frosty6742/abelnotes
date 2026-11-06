@@ -93,6 +93,7 @@
   "csChainArrow": "Seta",
   "csTidy": "Alinhar",
   "csToggleElbow": "Cotovelo / linha reta",
+  "csMoveArrowLeg": "Arraste para mover este trecho da seta",
   "csBlockAtStart": "Bloco no início da seta",
   "csBlockAtEnd": "Bloco na ponta da seta",
   "csSelectionDuplicated": "Seleção duplicada",

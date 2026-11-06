@@ -341,6 +341,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get csToggleElbow => '折线 / 直线';
 
   @override
+  String get csMoveArrowLeg => '拖动以移动箭头的这一段';
+
+  @override
   String get csBlockAtStart => '在箭头起点添加方块';
 
   @override
@@ -1294,8 +1297,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setPencilDoubleTap => 'Pencil 轻点两下';
 
   @override
-  String get setPencilDoubleTapSub =>
-      '轻点两下 Apple Pencil 在笔和橡皮擦之间切换';
+  String get setPencilDoubleTapSub => '轻点两下 Apple Pencil 在笔和橡皮擦之间切换';
 
   @override
   String get setFillShapes => '填充形状';

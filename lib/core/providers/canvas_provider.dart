@@ -3465,11 +3465,19 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     if (isConnector(shapeData)) {
       // An arrow/line whose ends land on two different blocks is attached
       // to them, so moving a block drags it along.
-      final from = blockAt(page.layers.content, Offset(x1, y1), _getElementBounds);
-      final to = blockAt(page.layers.content, Offset(x2, y2), _getElementBounds);
-      if (from != null && to != null && elementId(from) != elementId(to)) {
+      // Either end of an arrow that lands on a block attaches to it (one end
+      // is enough: an input or output arrow hangs off a single block).
+      var from = blockAt(page.layers.content, Offset(x1, y1), _getElementBounds);
+      var to = blockAt(page.layers.content, Offset(x2, y2), _getElementBounds);
+      if (from != null && to != null && elementId(from) == elementId(to)) to = null;
+      // A plain line touching a box is usually just a note mark: it only
+      // attaches when it joins two blocks.
+      if (shapeData.shapeType == 'line' && (from == null || to == null)) from = to = null;
+      if (from != null || to != null) {
         shapeData = shapeData.copyWith(
-            startId: elementId(from), endId: elementId(to), elbow: 'h');
+            startId: from == null ? null : elementId(from),
+            endId: to == null ? null : elementId(to),
+            elbow: 'h');
         shapeData = _snapConnector(shapeData, {
           for (final e in page.layers.content) elementId(e): e,
         });
@@ -4161,44 +4169,7 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     return inside;
   }
 
-  Rect? _getElementBounds(ContentElement element) {
-    Rect getRotatedBounds(Rect rect, double rotation) {
-      if (rotation == 0.0) return rect;
-      final c = rect.center;
-      final cosA = cos(rotation);
-      final sinA = sin(rotation);
-      Offset r(Offset p) {
-        final dx = p.dx - c.dx;
-        final dy = p.dy - c.dy;
-        return Offset(c.dx + dx * cosA - dy * sinA, c.dy + dx * sinA + dy * cosA);
-      }
-      final pts = [r(rect.topLeft), r(rect.topRight), r(rect.bottomLeft), r(rect.bottomRight)];
-      final xs = pts.map((p) => p.dx);
-      final ys = pts.map((p) => p.dy);
-      return Rect.fromLTRB(xs.reduce(min), ys.reduce(min), xs.reduce(max), ys.reduce(max));
-    }
-
-    return element.map(unknown: (_) => null,
-      stroke: (e) {
-        if (e.data.points.isEmpty) return null;
-        final xs = e.data.points.map((p) => p.x);
-        final ys = e.data.points.map((p) => p.y);
-        final halfW = e.data.baseWidth / 2.0;
-        return Rect.fromLTRB(xs.reduce(min) - halfW, ys.reduce(min) - halfW, xs.reduce(max) + halfW, ys.reduce(max) + halfW);
-      },
-      text: (e) => Rect.fromLTWH(e.data.x, e.data.y, e.data.width, e.data.height),
-      image: (e) {
-        final rect = Rect.fromLTWH(e.data.x, e.data.y, e.data.width, e.data.height);
-        return getRotatedBounds(rect, e.data.rotation);
-      },
-      shape: (e) {
-        final halfW = e.data.strokeWidth / 2.0;
-        final baseRect = Rect.fromPoints(Offset(e.data.x1, e.data.y1), Offset(e.data.x2, e.data.y2)).inflate(halfW);
-        return getRotatedBounds(baseRect, e.data.rotation);
-      },
-      math: (e) => Rect.fromLTWH(e.data.x, e.data.y, e.data.width, e.data.height),
-    );
-  }
+  Rect? _getElementBounds(ContentElement element) => elementBounds(element);
 
   void moveSelection(Offset delta) {
     if (state == null || state!.lassoSelection == null) return;
@@ -4463,6 +4434,7 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
                 stroke: (b) => b.data.baseWidth) ??
             2.0,
         startId: elementId(body),
+        elbow: 'h',
       ),
     );
     final undoStack = _pushUndo(s, s.currentPageFileName, page);
@@ -4529,9 +4501,13 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
   /// direction to build along, so it never offers this.
   bool canAddBlockAtConnector(String id, {required bool atEnd}) {
     final d = _connector(id);
+    final target = atEnd ? d?.endId : d?.startId;
+    // An end whose block was deleted is free again (attached ends never
+    // unlink, so a deleted block leaves its id behind).
     return d != null &&
         d.shapeType == 'arrow' &&
-        (atEnd ? d.endId : d.startId) == null;
+        (target == null ||
+            !state!.currentPage!.layers.content.any((e) => elementId(e) == target));
   }
 
   /// Starting a diagram from an arrow: puts [symbol] on the free end of the
@@ -4575,7 +4551,9 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     final bodyId = elementId(placed[bodyIdx]);
 
     final undoStack = _pushUndo(s, s.currentPageFileName, page);
-    final attached = atEnd ? d.copyWith(endId: bodyId) : d.copyWith(startId: bodyId);
+    // Attached arrows run at right angles, like the rest of the diagram.
+    final attached = (atEnd ? d.copyWith(endId: bodyId) : d.copyWith(startId: bodyId))
+        .copyWith(elbow: d.elbow ?? 'h');
     final content = _snapConnectors([
       for (final e in page.layers.content)
         elementId(e) == id
@@ -4614,8 +4592,43 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     final undoStack = _pushUndo(s, s.currentPageFileName, page);
     // Straight needs its ends back on the ray between the block centres;
     // elbow gets its side midpoints from the snap.
+    // Back to straight also forgets a dragged middle leg, so a bend is undoable.
     final next = _snapConnector(
-        d.elbow == null ? d.copyWith(elbow: 'h') : d.copyWith(elbow: null), byId);
+        d.elbow == null
+            ? d.copyWith(elbow: 'h')
+            : d.copyWith(elbow: null, bend: null, lane: null),
+        byId);
+    final content = [
+      for (final e in page.layers.content)
+        elementId(e) == id
+            ? ContentElement.shape(id: id, zIndex: e.mapOrNull(shape: (x) => x.zIndex)!, data: next)
+            : e
+    ];
+    final updatedPages = Map<String, PageData>.from(s.pages);
+    updatedPages[s.currentPageFileName] = carryPdfTextLayer(page, PageData(
+      pageId: page.pageId, pageNumber: page.pageNumber,
+      width: page.width, height: page.height,
+      layers: RenderingLayers(background: page.layers.background, content: content),
+      assetReferences: page.assetReferences,
+      createdAt: page.createdAt, modifiedAt: DateTime.now(),
+    ));
+    state = s.copyWith(
+        pages: updatedPages, undoStack: undoStack, redoStack: [], isDirty: true);
+  }
+
+  /// Pins the middle leg of the elbow arrow [id] at page coordinate [at]
+  /// (x for a left-right elbow, y for an up-down one): one undo step, called
+  /// once when the leg's handle is let go.
+  void setConnectorBend(String id, double at) {
+    final s = state;
+    final page = s?.currentPage;
+    if (s == null || page == null) return;
+    final byId = {for (final e in page.layers.content) elementId(e): e};
+    final target = byId[id];
+    final d = target?.mapOrNull(shape: (x) => x.data);
+    if (d == null || !isConnector(d) || d.elbow == null) return;
+    final undoStack = _pushUndo(s, s.currentPageFileName, page);
+    final next = bendConnector(d, at, byId, _getElementBounds);
     final content = [
       for (final e in page.layers.content)
         elementId(e) == id
@@ -5014,7 +5027,9 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     final updatedPage = carryPdfTextLayer(page, PageData(
       pageId: page.pageId, pageNumber: page.pageNumber,
       width: page.width, height: page.height,
-      layers: RenderingLayers(background: page.layers.background, content: filteredContent),
+      layers: RenderingLayers(
+          background: page.layers.background,
+          content: _snapConnectors(filteredContent, const {})), // detours round a deleted block go
       assetReferences: page.assetReferences,
       createdAt: page.createdAt, modifiedAt: DateTime.now(),
     ));
@@ -6197,12 +6212,14 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
   }
 
   PageData _pageWithNewElement(PageData page, ContentElement element) {
+    final content = [...page.layers.content, element];
     return carryPdfTextLayer(page, PageData(
       pageId: page.pageId, pageNumber: page.pageNumber,
       width: page.width, height: page.height,
       layers: RenderingLayers(
         background: page.layers.background,
-        content: [...page.layers.content, element],
+        // A new block may sit in an arrow's way: arrows re-route round it.
+        content: isBlockBody(element) ? _snapConnectors(content, const {}) : content,
       ),
       assetReferences: page.assetReferences,
       createdAt: page.createdAt, modifiedAt: DateTime.now(),
@@ -6647,11 +6664,12 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
         math: (e) => e as ContentElement,
       );
     }).toList();
+    final snapped = _snapConnectors(updatedContent, {elementId});
 
     final updatedPage = carryPdfTextLayer(page, PageData(
       pageId: page.pageId, pageNumber: page.pageNumber,
       width: page.width, height: page.height,
-      layers: RenderingLayers(background: page.layers.background, content: updatedContent),
+      layers: RenderingLayers(background: page.layers.background, content: snapped),
       assetReferences: page.assetReferences,
       createdAt: page.createdAt, modifiedAt: DateTime.now(),
     ));
@@ -6677,7 +6695,9 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     final updatedPage = carryPdfTextLayer(page, PageData(
       pageId: page.pageId, pageNumber: page.pageNumber,
       width: page.width, height: page.height,
-      layers: RenderingLayers(background: page.layers.background, content: filteredContent),
+      layers: RenderingLayers(
+          background: page.layers.background,
+          content: _snapConnectors(filteredContent, const {})), // detours round a deleted block go
       assetReferences: page.assetReferences,
       createdAt: page.createdAt, modifiedAt: DateTime.now(),
     ));
@@ -7544,7 +7564,9 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     final updatedPage = carryPdfTextLayer(page, PageData(
       pageId: page.pageId, pageNumber: page.pageNumber,
       width: page.width, height: page.height,
-      layers: RenderingLayers(background: page.layers.background, content: [...page.layers.content, ...newElements]),
+      layers: RenderingLayers(
+          background: page.layers.background,
+          content: _snapConnectors([...page.layers.content, ...newElements], const {})),
       assetReferences: [...page.assetReferences, ...newRefs],
       createdAt: page.createdAt, modifiedAt: DateTime.now(),
     ));
@@ -7648,7 +7670,7 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
       height: page.height,
       layers: RenderingLayers(
         background: page.layers.background,
-        content: [...page.layers.content, ...newElements],
+        content: _snapConnectors([...page.layers.content, ...newElements], const {}),
       ),
       assetReferences: page.assetReferences,
       createdAt: page.createdAt,
@@ -7931,6 +7953,7 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
     final offset = position - symbol.bounds.center;
     final baseZ = _nextZIndex(page);
     final newElements = <ContentElement>[];
+    final placedFrom = <ContentElement>[]; // parallel to newElements
     final newRefs = <String>[];
     for (final element in symbol.elements) {
       // A picture inside the symbol only comes along when this notebook has
@@ -7944,6 +7967,7 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
       }
       final newId = const Uuid().v4();
       final z = baseZ + newElements.length;
+      placedFrom.add(element);
       newElements.add(_tintBuiltin(symbol, _translateElement(element, offset),
               s.toolSettings.color).map(
         unknown: (u) => u.copyWith(id: newId, zIndex: z),
@@ -7958,11 +7982,16 @@ class CanvasNotifier extends StateNotifier<CanvasState?> {
       state = s.copyWith(clearPendingSymbol: true);
       return;
     }
+    // A saved arrow must follow the inserted blocks, not the ones it was saved from.
+    newElements.replaceRange(
+        0, newElements.length, remapConnectors(placedFrom, newElements));
 
     final updatedPage = carryPdfTextLayer(page, PageData(
       pageId: page.pageId, pageNumber: page.pageNumber,
       width: page.width, height: page.height,
-      layers: RenderingLayers(background: page.layers.background, content: [...page.layers.content, ...newElements]),
+      layers: RenderingLayers(
+          background: page.layers.background,
+          content: _snapConnectors([...page.layers.content, ...newElements], const {})),
       assetReferences: [...page.assetReferences, ...newRefs],
       createdAt: page.createdAt, modifiedAt: DateTime.now(),
     ));

@@ -93,6 +93,7 @@
   "csChainArrow": "Pfeil",
   "csTidy": "Ausrichten",
   "csToggleElbow": "Winkel / gerade Linie",
+  "csMoveArrowLeg": "Ziehen, um diesen Teil des Pfeils zu verschieben",
   "csBlockAtStart": "Block am Pfeilanfang",
   "csBlockAtEnd": "Block an der Pfeilspitze",
   "csSelectionDuplicated": "Auswahl dupliziert",

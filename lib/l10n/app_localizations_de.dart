@@ -353,6 +353,10 @@ class AppLocalizationsDe extends AppLocalizations {
   String get csToggleElbow => 'Winkel / gerade Linie';
 
   @override
+  String get csMoveArrowLeg =>
+      'Ziehen, um diesen Teil des Pfeils zu verschieben';
+
+  @override
   String get csBlockAtStart => 'Block am Pfeilanfang';
 
   @override

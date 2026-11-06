@@ -6367,7 +6367,11 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
               }
             : null,
         // Ink can't be rotated here (outline blocks are the only ink with handles).
-        showRotateHandle: element.mapOrNull(stroke: (_) => false) ?? true,
+        // Attached arrows re-snap to their blocks, so turning them does nothing.
+        showRotateHandle: element.mapOrNull(
+                stroke: (_) => false,
+                shape: (x) => x.data.startId == null && x.data.endId == null) ??
+            true,
         onBlockAtStart:
             ref.read(canvasProvider.notifier).canAddBlockAtConnector(elementId, atEnd: false)
                 ? () => _blockAtConnector(elementId, atEnd: false)
@@ -6379,8 +6383,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
         onToggleElbow: element.mapOrNull(
                     shape: (x) =>
                         (x.data.shapeType == 'arrow' || x.data.shapeType == 'line') &&
-                        x.data.startId != null &&
-                        x.data.endId != null) ==
+                        (x.data.startId != null || x.data.endId != null)) ==
                 true
             ? () => ref.read(canvasProvider.notifier).toggleConnectorElbow(elementId)
             : null,
@@ -6491,7 +6494,38 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
           ref.read(canvasProvider.notifier).flipImageElement(elementId);
         } : null,
       ),
+      if (_arrowLegHandle(element, state, canvasSize) case final leg?) leg,
     ];
+  }
+
+  /// The drag handle on an elbow arrow's middle leg, or null.
+  Widget? _arrowLegHandle(ContentElement element, CanvasState state, Size canvasSize) {
+    final d = element.mapOrNull(shape: (x) => x.data);
+    if (d == null || !isConnector(d) || d.elbow == null) return null;
+    final id = elementId(element);
+    final route = connectorRoute(d);
+    // A leg with no length (blocks in line) has nothing to slide, and
+    // pinning it would only switch the automatic routing off.
+    if ((route[2] - route[1]).distance < 1) return null;
+    final movesX = d.elbow == 'h';
+    final lane = movesX ? route[1].dx : route[1].dy;
+    final perPage = state.zoom * _getRenderScale(state, canvasSize);
+    final content = state.currentPage?.layers.content ?? const <ContentElement>[];
+    double at(double screenDelta) => lane + screenDelta / perPage;
+    return _ArrowLegHandle(
+      position: _toScreenCoords((route[1] + route[2]) / 2, state, canvasSize),
+      movesX: movesX,
+      label: AppLocalizations.of(context).csMoveArrowLeg,
+      preview: (delta) {
+        final byId = {for (final e in content) elementId(e): e};
+        return [
+          for (final p in connectorRoute(bendConnector(d, at(delta), byId, elementBounds)))
+            _toScreenCoords(p, state, canvasSize)
+        ];
+      },
+      onCommit: (delta) =>
+          ref.read(canvasProvider.notifier).setConnectorBend(id, at(delta)),
+    );
   }
 
   /// Asks which block to add. With [allowSame] the first options are "same
@@ -9722,4 +9756,112 @@ class _NearPointLayout extends SingleChildLayoutDelegate {
   @override
   bool shouldRelayout(_NearPointLayout oldDelegate) =>
       oldDelegate.point != point;
+}
+
+/// Drag handle on the middle leg of an elbow arrow: slides the leg sideways
+/// (a feedback loop further down, a run between two rows…). While dragged it
+/// draws the new route itself, so only this widget rebuilds per frame;
+/// letting go commits once.
+class _ArrowLegHandle extends StatefulWidget {
+  final Offset position;
+  final bool movesX;
+  final String label;
+  final List<Offset> Function(double screenDelta) preview;
+  final ValueChanged<double> onCommit;
+
+  const _ArrowLegHandle({
+    required this.position,
+    required this.movesX,
+    required this.label,
+    required this.preview,
+    required this.onCommit,
+  });
+
+  @override
+  State<_ArrowLegHandle> createState() => _ArrowLegHandleState();
+}
+
+class _ArrowLegHandleState extends State<_ArrowLegHandle> {
+  double? _delta;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = HwThemeScope.of(context);
+    final d = _delta ?? 0;
+    final at = widget.position + (widget.movesX ? Offset(d, 0) : Offset(0, d));
+    return Positioned.fill(
+      child: Stack(clipBehavior: Clip.none, children: [
+        if (_delta != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(painter: _RoutePreviewPainter(widget.preview(d), p.accent)),
+            ),
+          ),
+        Positioned(
+          left: at.dx - 16,
+          top: at.dy - 16,
+          width: 32,
+          height: 32,
+          child: Semantics(
+            label: widget.label,
+            child: Tooltip(
+              message: widget.label,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanStart: (_) => setState(() => _delta = 0),
+                onPanUpdate: (e) => setState(
+                    () => _delta = (_delta ?? 0) + (widget.movesX ? e.delta.dx : e.delta.dy)),
+                onPanEnd: (_) {
+                  final moved = _delta ?? 0;
+                  setState(() => _delta = null);
+                  if (moved.abs() > 0.5) widget.onCommit(moved);
+                },
+                onPanCancel: () => setState(() => _delta = null),
+                child: Center(
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: p.accent,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: Icon(
+                        widget.movesX ? Icons.swap_horiz_rounded : Icons.swap_vert_rounded,
+                        size: 8,
+                        color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _RoutePreviewPainter extends CustomPainter {
+  final List<Offset> route;
+  final Color color;
+  _RoutePreviewPainter(this.route, this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (route.length < 2) return;
+    final path = Path()..moveTo(route.first.dx, route.first.dy);
+    for (final q in route.skip(1)) {
+      path.lineTo(q.dx, q.dy);
+    }
+    canvas.drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..strokeJoin = StrokeJoin.round);
+  }
+
+  @override
+  bool shouldRepaint(_RoutePreviewPainter old) => old.route != route || old.color != color;
 }

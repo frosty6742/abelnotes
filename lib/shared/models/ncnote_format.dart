@@ -399,6 +399,13 @@ class ShapeData with _$ShapeData {
     // horizontal-first / vertical-first) instead of a straight segment.
     // Null = straight. Re-derived from the block positions on every snap.
     String? elbow,
+    // Elbows: where the middle leg runs, as an offset from halfway between
+    // the two ends (null = halfway). Written by every snap, so a detour
+    // round a block is drawn without knowing about other blocks.
+    double? lane,
+    // Elbows: the middle leg the user dragged, as an offset from halfway
+    // between the two blocks' centres. Null = routed automatically.
+    double? bend,
   }) = _ShapeData;
 
   factory ShapeData.fromJson(Map<String, dynamic> json) =>

@@ -93,6 +93,7 @@
   "csChainArrow": "箭头",
   "csTidy": "整理对齐",
   "csToggleElbow": "折线 / 直线",
+  "csMoveArrowLeg": "拖动以移动箭头的这一段",
   "csBlockAtStart": "在箭头起点添加方块",
   "csBlockAtEnd": "在箭头末端添加方块",
   "csSelectionDuplicated": "已复制所选内容",

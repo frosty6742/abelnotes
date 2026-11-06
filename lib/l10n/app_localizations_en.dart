@@ -351,6 +351,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get csToggleElbow => 'Elbow / straight line';
 
   @override
+  String get csMoveArrowLeg => 'Drag to move this part of the arrow';
+
+  @override
   String get csBlockAtStart => 'Block at the arrow\'s start';
 
   @override

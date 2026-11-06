@@ -281,6 +281,7 @@
   "csTidy": "Allinea",
   "@csTidy": {},
   "csToggleElbow": "Gomito / linea retta",
+  "csMoveArrowLeg": "Trascina per spostare questo tratto della freccia",
   "@csToggleElbow": {},
   "csBlockAtStart": "Blocco all'inizio della freccia",
   "@csBlockAtStart": {},

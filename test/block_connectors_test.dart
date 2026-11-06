@@ -80,7 +80,7 @@ void main() {
     expect(d.endId, 'b');
   });
 
-  test('moving only the arrow detaches the ends whose block stayed', () {
+  test('moving only the arrow keeps it attached and back on its blocks', () {
     n.state = _state([_box('a', 0, 0), _box('b', 200, 0), _arrow('r', 'a', 'b')], null);
     n.state = n.state!.copyWith(
         lassoSelection: const LassoSelection(
@@ -89,9 +89,9 @@ void main() {
             dragOffset: Offset(0, 300)));
     n.applySelectionTransform();
     final d = _shape(n.state!, 'r');
-    expect(d.startId, isNull);
-    expect(d.endId, isNull);
-    expect(d.y1, 325);
+    expect(d.startId, 'a');
+    expect(d.endId, 'b');
+    expect(d.y1, closeTo(25, 1)); // snapped back onto the blocks' edges
   });
 
   test('chain right copies the block and joins it with an attached arrow', () {
@@ -119,6 +119,124 @@ void main() {
     final copyIds = n.state!.lassoSelection!.selectedIds;
     expect(copyIds.contains(copyArrow.startId), isTrue);
     expect(copyIds.contains(copyArrow.endId), isTrue);
+  });
+
+  test('an inserted saved symbol\'s arrow follows the inserted blocks, not the saved ones', () {
+    n.state = _state([_box('a', 0, 0), _box('b', 200, 0), _arrow('r', 'a', 'b')], null);
+    final sym = ReusableSymbol(
+        id: 'mine',
+        name: 'two blocks',
+        elements: [_box('a', 0, 0), _box('b', 200, 0), _arrow('r', 'a', 'b')],
+        bounds: const Rect.fromLTWH(0, 0, 300, 50),
+        createdAt: DateTime(2026));
+    n.insertSymbol(sym, const Offset(150, 400));
+    final copy = n.state!.currentPage!.layers.content.last.mapOrNull(shape: (x) => x)!.data;
+    expect(copy.startId, isNot('a'));
+    expect(copy.endId, isNot('b'));
+    final ids = n.state!.currentPage!.layers.content.map(elementId).toSet();
+    expect(ids.contains(copy.startId) && ids.contains(copy.endId), isTrue);
+  });
+
+  test('the arrow drawn mid-drag is exactly where the drop leaves it', () {
+    // Drag, scale and turn block b with the lasso; a stays.
+    const sel = LassoSelection(
+        selectedIds: ['b'],
+        bounds: Rect.fromLTWH(200, 0, 100, 50),
+        dragOffset: Offset(30, 140),
+        scale: 1.4,
+        rotation: 0.3);
+    final content = [_box('a', 0, 0), _box('b', 200, 0), _arrow('r', 'a', 'b')];
+    final c0 = sel.bounds.center;
+    Offset move(Offset p) => lassoPoint(p, c0, sel.scale, sel.rotation, sel.dragOffset);
+    final live = liveConnectorRoutes(content, (id) => id == 'b', (_, p) => move(p), (e) {
+      final b = elementBounds(e)!;
+      return elementId(e) == 'b'
+          ? lassoRect(b, c0, sel.scale, sel.rotation, sel.dragOffset)
+          : b;
+    })['r']!;
+    n.state = _state(content, sel);
+    n.applySelectionTransform();
+    final dropped = _shape(n.state!, 'r');
+    expect(live.x1, closeTo(dropped.x1, 0.5));
+    expect(live.y1, closeTo(dropped.y1, 0.5));
+    expect(live.x2, closeTo(dropped.x2, 0.5));
+    expect(live.y2, closeTo(dropped.y2, 0.5));
+    expect(live.elbow, dropped.elbow);
+  });
+
+  test('mid-drag routing round a block in the way matches the drop too', () {
+    const sel = LassoSelection(
+        selectedIds: ['b'], bounds: Rect.fromLTWH(400, 0, 100, 50), dragOffset: Offset(10, 8));
+    final content = [
+      _box('a', 0, 0),
+      _box('m', 200, 0), // sits between a and b
+      _box('b', 400, 0),
+      ContentElement.shape(
+          id: 'r',
+          zIndex: 1,
+          data: const ShapeData(
+              shapeType: 'arrow', x1: 100, y1: 25, x2: 400, y2: 25,
+              startId: 'a', endId: 'b', elbow: 'h')),
+    ];
+    final c0 = sel.bounds.center;
+    final live = liveConnectorRoutes(
+        content,
+        (id) => id == 'b',
+        (_, p) => lassoPoint(p, c0, 1, 0, sel.dragOffset),
+        (e) => elementId(e) == 'b'
+            ? lassoRect(elementBounds(e)!, c0, 1, 0, sel.dragOffset)
+            : elementBounds(e))['r']!;
+    n.state = _state(content, sel);
+    n.applySelectionTransform();
+    final dropped = _shape(n.state!, 'r');
+    expect(connectorRoute(live), connectorRoute(dropped));
+    expect(connectorRoute(dropped)[1].dy, greaterThan(50)); // went under m
+  });
+
+  test('a block placed in an arrow\'s way makes it go round, and deleting it straightens it', () {
+    n.state = _state([
+      _box('a', 0, 0),
+      _box('b', 400, 0),
+      ContentElement.shape(
+          id: 'r',
+          zIndex: 1,
+          data: const ShapeData(
+              shapeType: 'arrow', x1: 100, y1: 25, x2: 400, y2: 25,
+              startId: 'a', endId: 'b', elbow: 'h')),
+    ], null);
+    final block = blockDiagramLibrary().symbols.firstWhere((x) => x.id.endsWith('-block'));
+    n.insertSymbol(block, const Offset(250, 25));
+    expect(connectorRoute(_shape(n.state!, 'r'))[1].dy, greaterThan(50)); // under the new block
+    final placed = elementId(n.state!.currentPage!.layers.content
+        .firstWhere((e) => !['a', 'b', 'r'].contains(elementId(e))));
+    n.deleteElement(placed);
+    expect(connectorRoute(_shape(n.state!, 'r')).every((p) => p.dy == 25), isTrue);
+  });
+
+  test('back to straight forgets a dragged leg', () {
+    n.state = _state([
+      _box('a', 0, 0),
+      _box('b', 200, 0),
+      ContentElement.shape(
+          id: 'r',
+          zIndex: 1,
+          data: const ShapeData(
+              shapeType: 'arrow', x1: 100, y1: 25, x2: 200, y2: 25,
+              startId: 'a', endId: 'b', elbow: 'h')),
+    ], null);
+    n.setConnectorBend('r', 170);
+    expect(_shape(n.state!, 'r').bend, isNotNull);
+    n.toggleConnectorElbow('r');
+    n.toggleConnectorElbow('r');
+    expect(_shape(n.state!, 'r').bend, isNull);
+    expect(_shape(n.state!, 'r').lane, isNull);
+  });
+
+  test('deleting the block on an arrow tip frees the tip for a new block', () {
+    n.state = _state([_box('a', 0, 0), _box('b', 200, 0), _arrow('r', 'a', 'b')], null);
+    expect(n.canAddBlockAtConnector('r', atEnd: true), isFalse);
+    n.deleteElement('b');
+    expect(n.canAddBlockAtConnector('r', atEnd: true), isTrue);
   });
 
   test('a loose scribble is not a block to chain', () {

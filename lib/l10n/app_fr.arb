@@ -93,6 +93,7 @@
   "csChainArrow": "Flèche",
   "csTidy": "Aligner",
   "csToggleElbow": "Coude / ligne droite",
+  "csMoveArrowLeg": "Faites glisser pour déplacer ce segment de la flèche",
   "csBlockAtStart": "Bloc au début de la flèche",
   "csBlockAtEnd": "Bloc à la pointe de la flèche",
   "csSelectionDuplicated": "Sélection dupliquée",

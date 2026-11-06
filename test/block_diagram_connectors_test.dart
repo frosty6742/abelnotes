@@ -36,7 +36,8 @@ ContentElement outline(String id, List<Offset> corners) {
     }
   }
   pts.add(pts.first);
-  return ContentElement.stroke(id: id, zIndex: 0, data: StrokeData(points: pts));
+  return ContentElement.stroke(
+      id: id, zIndex: 0, data: StrokeData(points: pts, fillColor: 0x33000000));
 }
 
 Rect? plainBounds(ContentElement e) => blockOutlineRect(e);
@@ -55,6 +56,10 @@ void main() {
           data: StrokeData(points: [for (var i = 0; i < 12; i++) StrokePoint(x: i * 5.0, y: 0)]));
       expect(isBlockBody(open), isFalse);
       expect(isBlockBody(arrow('a', null, null)), isFalse);
+      // A handwritten "o" is a closed loop too, but has no fill: not a block.
+      final o = outline('o', const [Offset(0, 0), Offset(20, 0), Offset(20, 20), Offset(0, 20)]);
+      expect(isBlockBody(o.mapOrNull(stroke: (x) => ContentElement.stroke(
+          id: 'o', zIndex: 0, data: x.data.copyWith(fillColor: null)))!), isFalse);
     });
   });
 
@@ -135,10 +140,64 @@ void main() {
       expect(identical(out.last, other), isTrue);
     });
 
-    test('a moved arrow detaches from the block that stayed', () {
-      final out = snapConnectors([a, b, arrow('r', 'a', 'b')], {'r', 'b'}, plainBounds);
-      expect(shapeOf(out, 'r').startId, isNull);
+    test('a moved arrow stays attached to both blocks', () {
+      final out = snapConnectors([a, b, arrow('r', 'a', 'b')], {'r'}, plainBounds);
+      expect(shapeOf(out, 'r').startId, 'a');
       expect(shapeOf(out, 'r').endId, 'b');
+    });
+  });
+
+  group('routing round blocks', () {
+    bool crosses(List<Offset> route, Rect r) {
+      for (var i = 0; i + 1 < route.length; i++) {
+        if (Rect.fromPoints(route[i], route[i + 1]).overlaps(r.deflate(1))) return true;
+      }
+      return false;
+    }
+
+    final s = rect('s', 0, 0, 40, 20), m = rect('m', 100, 0, 40, 20), g = rect('g', 200, 0, 40, 20);
+    Map<String, ContentElement> ids(List<ContentElement> l) => {for (final e in l) elementId(e): e};
+
+    test('an arrow with a block in the way goes under the row, out of and into the bottoms', () {
+      final d = snapConnector(shapeOf([arrow('r', 's', 'g', elbow: 'h')], 'r'), ids([s, m, g]), plainBounds);
+      final route = connectorRoute(d);
+      expect(crosses(route, plainBounds(m)!), isFalse);
+      expect(d.y1, 20); // s's bottom
+      expect(d.y2, 20); // g's bottom
+      expect(route[1].dy, greaterThan(20)); // the leg runs below the row
+    });
+
+    test('the back arrow of a two-way pair loops under instead of lying on the forward one', () {
+      final all = ids([s, g, arrow('f', 's', 'g', elbow: 'h'), arrow('b', 'g', 's', elbow: 'h')]);
+      final fwd = connectorRoute(snapConnector(shapeOf(all.values.toList(), 'f'), all, plainBounds));
+      final back = connectorRoute(snapConnector(shapeOf(all.values.toList(), 'b'), all, plainBounds));
+      expect(fwd.every((p) => p.dy == 10), isTrue); // straight across the middle
+      expect(back.every((p) => p.dy >= 20), isTrue); // entirely below the blocks
+    });
+
+    test('with nothing in the way the route is the plain facing-sides elbow', () {
+      final d = snapConnector(shapeOf([arrow('r', 's', 'g', elbow: 'h')], 'r'), ids([s, g]), plainBounds);
+      expect(d.lane, isNull);
+      expect((d.x1, d.x2), (40.0, 200.0));
+    });
+
+    test('a dragged leg stays put relative to the blocks and keeps its axis', () {
+      final all = ids([s, g]);
+      final bent = bendConnector(
+          snapConnector(shapeOf([arrow('r', 's', 'g', elbow: 'h')], 'r'), all, plainBounds),
+          150, all, plainBounds);
+      expect(connectorRoute(bent)[1].dx, closeTo(150, 0.01));
+      // g moves far down: an unpinned arrow would turn vertical-first.
+      final g2 = rect('g', 200, 300, 40, 20);
+      final moved = snapConnector(bent, ids([s, g2]), plainBounds);
+      expect(moved.elbow, 'h');
+      expect(connectorRoute(moved)[1].dx, closeTo(150, 0.01));
+    });
+
+    test('a U arrow\'s bounds cover its leg under the row', () {
+      final d = snapConnector(shapeOf([arrow('r', 's', 'g', elbow: 'h')], 'r'), ids([s, m, g]), plainBounds);
+      final b = elementBounds(ContentElement.shape(id: 'r', zIndex: 0, data: d))!;
+      expect(b.bottom, greaterThan(connectorRoute(d)[1].dy));
     });
   });
 
