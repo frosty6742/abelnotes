@@ -111,16 +111,39 @@ class _SymbolLibraryPanelState extends ConsumerState<SymbolLibraryPanel> {
             ..style = PaintingStyle.stroke
             ..strokeWidth = (d.strokeWidth * 0.6).clamp(0.5, 3.0)
             ..isAntiAlias = true;
+          // The interior, as the page draws it, under the outline.
+          final fill = d.fillColor == null
+              ? null
+              : (Paint()
+                ..color = Color(d.fillColor!)
+                ..style = PaintingStyle.fill
+                ..isAntiAlias = true);
           switch (d.shapeType) {
             case 'rectangle':
-              canvas.drawRect(Rect.fromLTRB(d.x1, d.y1, d.x2, d.y2), paint);
+              final r = Rect.fromLTRB(d.x1, d.y1, d.x2, d.y2);
+              if (fill != null) canvas.drawRect(r, fill);
+              canvas.drawRect(r, paint);
               break;
             case 'circle':
-              canvas.drawOval(Rect.fromLTRB(d.x1, d.y1, d.x2, d.y2), paint);
+              final r = Rect.fromLTRB(d.x1, d.y1, d.x2, d.y2);
+              if (fill != null) canvas.drawOval(r, fill);
+              canvas.drawOval(r, paint);
               break;
             case 'line':
+              canvas.drawLine(Offset(d.x1, d.y1), Offset(d.x2, d.y2), paint);
+              break;
             case 'arrow':
               canvas.drawLine(Offset(d.x1, d.y1), Offset(d.x2, d.y2), paint);
+              // Same open "V" head the page draws.
+              final angle = atan2(d.y2 - d.y1, d.x2 - d.x1);
+              const arm = 3.75, spread = 0.5;
+              canvas.drawPath(
+                  Path()
+                    ..moveTo(d.x2, d.y2)
+                    ..lineTo(d.x2 - arm * cos(angle - spread), d.y2 - arm * sin(angle - spread))
+                    ..moveTo(d.x2, d.y2)
+                    ..lineTo(d.x2 - arm * cos(angle + spread), d.y2 - arm * sin(angle + spread)),
+                  paint);
               break;
             case 'triangle':
               final path = Path()
@@ -128,6 +151,7 @@ class _SymbolLibraryPanelState extends ConsumerState<SymbolLibraryPanel> {
                 ..lineTo(d.x1, d.y2)
                 ..lineTo(d.x2, d.y2)
                 ..close();
+              if (fill != null) canvas.drawPath(path, fill);
               canvas.drawPath(path, paint);
               break;
           }
