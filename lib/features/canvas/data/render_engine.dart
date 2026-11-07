@@ -7,6 +7,7 @@ import 'package:abelnotes/core/services/block_diagram_connectors.dart'
     show connectorRoute, elementBounds, elementId, lassoPoint, lassoRect, liveConnectorRoutes;
 export 'package:abelnotes/core/services/block_diagram_connectors.dart' show connectorRoute;
 import 'package:abelnotes/features/canvas/data/math_rasterizer.dart';
+import 'package:abelnotes/features/canvas/data/pdf_vector_canvas.dart';
 import 'package:abelnotes/features/canvas/data/zoom_snapshot.dart';
 import 'package:abelnotes/features/canvas/data/text_paragraph_factory.dart';
 import 'package:abelnotes/shared/models/ncnote_format.dart';
@@ -176,6 +177,12 @@ double ballpointWidthFactor(double pressure) =>
 /// High-performance canvas render engine.
 /// Handles all rendering including zoom/pan transform internally.
 class CanvasRenderEngine extends CustomPainter {
+  /// Builds every path the painters draw; set by vector PDF export to get
+  /// paths it can read back. Also bypasses the static path caches, which
+  /// hold native paths.
+  final Path Function()? pathFactory;
+  Path _newPath() => pathFactory?.call() ?? Path();
+
   /// Effective page-units→pixels factor of the current paint pass (zoom ×
   /// fit scale). Set at the top of [paint]/[paintPage]; lets the background
   /// pattern painters skip sub-pixel patterns (thumbnail moiré + cost).
@@ -315,6 +322,7 @@ class CanvasRenderEngine extends CustomPainter {
     this.onMathCacheMiss,
     this.mathPixelRatio = 3.0,
     this.failedMathKeys = const <String>{},
+    this.pathFactory,
     Listenable? repaintNotifier,
   }) : super(repaint: repaintNotifier);
 
@@ -1211,7 +1219,7 @@ class CanvasRenderEngine extends CustomPainter {
         nyArr[i] = nyArr[i - 1];
       }
     }
-    final path = Path();
+    final path = _newPath();
     final hw0 = (interp[0].w * 0.5).clamp(0.2, 999.0);
     path.moveTo(interp[0].x + nxArr[0] * hw0, interp[0].y + nyArr[0] * hw0);
     for (int i = 1; i < count; i++) {
@@ -1265,7 +1273,7 @@ class CanvasRenderEngine extends CustomPainter {
 
     // A closed block outline carries an interior fill, painted under the line.
     if (stroke.fillColor != null && stroke.points.length > 2) {
-      final fill = Path()..moveTo(stroke.points[0].x, stroke.points[0].y);
+      final fill = _newPath()..moveTo(stroke.points[0].x, stroke.points[0].y);
       for (int i = 1; i < stroke.points.length; i++) {
         fill.lineTo(stroke.points[i].x, stroke.points[i].y);
       }
@@ -1287,7 +1295,7 @@ class CanvasRenderEngine extends CustomPainter {
         ..strokeWidth = stroke.baseWidth
         ..blendMode = BlendMode.multiply
         ..isAntiAlias = true;
-      final path = Path()..moveTo(stroke.points[0].x, stroke.points[0].y);
+      final path = _newPath()..moveTo(stroke.points[0].x, stroke.points[0].y);
       for (int i = 1; i < stroke.points.length; i++) {
         path.lineTo(stroke.points[i].x, stroke.points[i].y);
       }
@@ -1304,7 +1312,7 @@ class CanvasRenderEngine extends CustomPainter {
         ..strokeJoin = StrokeJoin.round
         ..isAntiAlias = true;
       final zoomBucketKey = (zoom / 0.5).round();
-      final cached = _strokePathCache[stroke];
+      final cached = pathFactory == null ? _strokePathCache[stroke] : null;
       if (cached != null && cached.zoomBucket == zoomBucketKey) {
         for (final run in cached.runs) {
           paint.strokeWidth = run.width;
@@ -1317,7 +1325,7 @@ class CanvasRenderEngine extends CustomPainter {
           interpolated,
           (p0, p1) => stroke.baseWidth *
               ballpointWidthFactor((p0.pressure + p1.pressure) / 2));
-      _strokePathCache[stroke] = _StrokeCacheEntry(zoomBucketKey, runs);
+      if (pathFactory == null) _strokePathCache[stroke] = _StrokeCacheEntry(zoomBucketKey, runs);
       for (final run in runs) {
         paint.strokeWidth = run.width;
         canvas.drawPath(run.path, paint);
@@ -1328,7 +1336,7 @@ class CanvasRenderEngine extends CustomPainter {
     // Brush: wide, soft edges via multiple overlapping strokes
     if (stroke.toolType == 'brush') {
       final zoomBucketKey = (zoom / 0.5).round();
-      final cached = _brushPathCache[stroke];
+      final cached = pathFactory == null ? _brushPathCache[stroke] : null;
       if (cached != null && cached.zoomBucket == zoomBucketKey) {
         for (final layer in cached.layers) {
           final paint = Paint()
@@ -1366,7 +1374,7 @@ class CanvasRenderEngine extends CustomPainter {
           canvas.drawPath(run.path, paint);
         }
       }
-      _brushPathCache[stroke] = _BrushCacheEntry(zoomBucketKey, layers);
+      if (pathFactory == null) _brushPathCache[stroke] = _BrushCacheEntry(zoomBucketKey, layers);
       return;
     }
 
@@ -1436,7 +1444,7 @@ class CanvasRenderEngine extends CustomPainter {
     // previously checked the cache AFTER all this precompute, wasting
     // the cache's whole purpose on every cache-miss frame.
     final zoomBucketKey = (zoom / 0.5).round();
-    final cachedRuns = _strokePathCache[stroke];
+    final cachedRuns = pathFactory == null ? _strokePathCache[stroke] : null;
     if (cachedRuns != null && cachedRuns.zoomBucket == zoomBucketKey) {
       final paint = Paint()
         ..color = color.withValues(alpha: stroke.opacity)
@@ -1578,7 +1586,7 @@ class CanvasRenderEngine extends CustomPainter {
         if (currentPath != null) {
           runs.add(_PathRun(currentPath, currentBucket));
         }
-        currentPath = Path()..moveTo(p0.x, p0.y);
+        currentPath = _newPath()..moveTo(p0.x, p0.y);
         currentBucket = bucket;
       }
       currentPath!.lineTo(p1.x, p1.y);
@@ -1586,7 +1594,7 @@ class CanvasRenderEngine extends CustomPainter {
     if (currentPath != null) {
       runs.add(_PathRun(currentPath, currentBucket));
     }
-    _strokePathCache[stroke] = _StrokeCacheEntry(zoomBucketKey, runs);
+    if (pathFactory == null) _strokePathCache[stroke] = _StrokeCacheEntry(zoomBucketKey, runs);
     for (final run in runs) {
       paint.strokeWidth = run.width;
       canvas.drawPath(run.path, paint);
@@ -1615,7 +1623,7 @@ class CanvasRenderEngine extends CustomPainter {
         if (currentPath != null) {
           runs.add(_PathRun(currentPath, currentBucket));
         }
-        currentPath = Path()..moveTo(p0.x, p0.y);
+        currentPath = _newPath()..moveTo(p0.x, p0.y);
         currentBucket = bucket;
       }
       currentPath!.lineTo(p1.x, p1.y);
@@ -1708,7 +1716,9 @@ class CanvasRenderEngine extends CustomPainter {
     // Paragraph shaping lives in text_paragraph_factory.dart so that the
     // import paginator measures exactly what this painter draws.
     final paragraph = buildTextParagraph(textData, width: widthOverride);
-    canvas.drawParagraph(paragraph, Offset(textData.x, textData.y));
+    final at = Offset(textData.x, textData.y);
+    if (canvas is VectorCanvas) return canvas.drawText(textData, paragraph, at);
+    canvas.drawParagraph(paragraph, at);
   }
 
   void _paintImage(Canvas canvas, ImageData imageData) {
@@ -1762,7 +1772,7 @@ class CanvasRenderEngine extends CustomPainter {
       final center = rect.center;
       canvas.drawCircle(center, iconSize * 0.3, iconPaint);
       // Mountain icon
-      final path = Path()
+      final path = _newPath()
         ..moveTo(center.dx - iconSize * 0.4, center.dy + iconSize * 0.3)
         ..lineTo(center.dx - iconSize * 0.1, center.dy - iconSize * 0.1)
         ..lineTo(center.dx + iconSize * 0.1, center.dy + iconSize * 0.15)
@@ -1901,7 +1911,7 @@ class CanvasRenderEngine extends CustomPainter {
         // already skipped). Resizing remaps these via affine bbox→bbox.
         if (shape.vertices.length == 6) {
           final v = shape.vertices;
-          final tPath = Path()
+          final tPath = _newPath()
             ..moveTo(v[0], v[1])
             ..lineTo(v[2], v[3])
             ..lineTo(v[4], v[5])
@@ -1931,7 +1941,7 @@ class CanvasRenderEngine extends CustomPainter {
           // Quadrant: 0=up, 1=right, 2=down, 3=left
           var q = ((shape.rotation / (pi / 2)).round()) % 4;
           if (q < 0) q += 4;
-          final tPath = Path();
+          final tPath = _newPath();
           switch (q) {
             case 0: // apex up
               tPath..moveTo(tCx, tTop)
@@ -1959,7 +1969,7 @@ class CanvasRenderEngine extends CustomPainter {
         } else {
           // Non-cardinal: the outer canvas.rotate handles the apex
           // direction; render the canonical apex-up triangle.
-          final tPath = Path()
+          final tPath = _newPath()
             ..moveTo(tCx, tTop)
             ..lineTo(tLeft, tBottom)
             ..lineTo(tRight, tBottom)
@@ -1976,7 +1986,7 @@ class CanvasRenderEngine extends CustomPainter {
         final rBottom = max(shape.y1, shape.y2);
         final rCx = (rLeft + rRight) / 2;
         final rCy = (rTop + rBottom) / 2;
-        final rPath = Path()
+        final rPath = _newPath()
           ..moveTo(rCx, rTop)       // top
           ..lineTo(rRight, rCy)     // right
           ..lineTo(rCx, rBottom)    // bottom
@@ -2023,7 +2033,7 @@ class CanvasRenderEngine extends CustomPainter {
       return;
     }
     final route = connectorRoute(shape);
-    final path = Path()..moveTo(route.first.dx, route.first.dy);
+    final path = _newPath()..moveTo(route.first.dx, route.first.dy);
     for (final p in route.skip(1)) {
       path.lineTo(p.dx, p.dy);
     }
@@ -2045,7 +2055,7 @@ class CanvasRenderEngine extends CustomPainter {
     // thick arrow's head isn't swallowed by its own line.
     final arrowLen = 3.75 * max(1.0, shape.strokeWidth);
     const arrowAngle = 0.5;
-    final path = Path()
+    final path = _newPath()
       ..moveTo(shape.x2, shape.y2)
       ..lineTo(shape.x2 - arrowLen * cos(angle - arrowAngle), shape.y2 - arrowLen * sin(angle - arrowAngle))
       ..moveTo(shape.x2, shape.y2)
@@ -2056,7 +2066,7 @@ class CanvasRenderEngine extends CustomPainter {
   void _paintArrowHeadPoints(Canvas canvas, Offset from, Offset to, double size, Paint paint) {
     final angle = atan2(to.dy - from.dy, to.dx - from.dx);
     const spread = 0.5;
-    final path = Path()
+    final path = _newPath()
       ..moveTo(to.dx, to.dy)
       ..lineTo(to.dx - size * cos(angle - spread), to.dy - size * sin(angle - spread))
       ..moveTo(to.dx, to.dy)
@@ -2093,7 +2103,7 @@ class CanvasRenderEngine extends CustomPainter {
         final tRight = max(start.dx, end.dx);
         final tTop = min(start.dy, end.dy);
         final tBottom = max(start.dy, end.dy);
-        final tPath = Path()
+        final tPath = _newPath()
           ..moveTo((tLeft + tRight) / 2, tTop)
           ..lineTo(tLeft, tBottom)
           ..lineTo(tRight, tBottom)
@@ -2107,7 +2117,7 @@ class CanvasRenderEngine extends CustomPainter {
         final rBottom = max(start.dy, end.dy);
         final rCx = (rLeft + rRight) / 2;
         final rCy = (rTop + rBottom) / 2;
-        final rPath = Path()
+        final rPath = _newPath()
           ..moveTo(rCx, rTop)
           ..lineTo(rRight, rCy)
           ..lineTo(rCx, rBottom)
@@ -2149,7 +2159,7 @@ class CanvasRenderEngine extends CustomPainter {
 
   void _paintLassoPathFromPoints(Canvas canvas, List<Offset> points) {
     // Build the full closed path
-    final fullPath = Path()..moveTo(points[0].dx, points[0].dy);
+    final fullPath = _newPath()..moveTo(points[0].dx, points[0].dy);
     for (int i = 1; i < points.length; i++) {
       fullPath.lineTo(points[i].dx, points[i].dy);
     }
@@ -2252,7 +2262,7 @@ class CanvasRenderEngine extends CustomPainter {
         final alpha01 = 1.0 - (age / fadeMs);
         final bucket = (alpha01 * buckets).floor().clamp(0, buckets - 1);
         if (bucket != currentBucket) {
-          paths[bucket] ??= Path();
+          paths[bucket] ??= _newPath();
           paths[bucket]!.moveTo(pts[i - 1].x, pts[i - 1].y);
           currentPath = paths[bucket];
           currentBucket = bucket;
