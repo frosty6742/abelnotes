@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:abelnotes/config/app_config.dart';
 import 'package:abelnotes/core/providers/canvas_provider.dart'
     show compactPageJson, decodePageData;
+import 'package:abelnotes/features/canvas/data/pdf_sources.dart';
 import 'package:abelnotes/core/services/file_service.dart';
 import 'package:abelnotes/core/services/remote_store.dart';
 import 'package:abelnotes/shared/models/ncnote_format.dart';
@@ -377,6 +378,81 @@ class SyncService {
     await _remote.createDirectory('${dir}assets/');
 
     _explodedDirsReady.add(notebookId);
+  }
+
+  /// Mirrors the notebook's `sources/` folder (source PDFs of imported
+  /// pages) with the server. Its files are immutable, so each side just
+  /// gets what the other lacks; PDFs travel before the indexes naming them.
+  /// A `<id>.gone` marker on either side retires that import everywhere.
+  /// Returns whether the local folder changed.
+  Future<bool> syncPdfSources(String notebookId, PdfSourceStore local) async {
+    final dir = '${_deltaDir(notebookId)}$kPdfSourcesDir/';
+    Set<String> remote;
+    try {
+      remote = {
+        for (final i in await _remote.listDirectory(dir))
+          if (!i.isDirectory) i.name,
+      };
+    } on RemoteStoreException catch (e) {
+      if (e.statusCode != 404) rethrow;
+      remote = {};
+    }
+    final mine = await local.list();
+    final gone = {
+      for (final n in {...mine, ...remote})
+        if (n.endsWith(kGoneSuffix)) pdfSourceIdOf(n),
+    };
+    bool retired(String n) =>
+        !n.endsWith(kGoneSuffix) && gone.contains(pdfSourceIdOf(n));
+    int pdfFirst(String a, String b) =>
+        (a.endsWith('.json') ? 1 : 0) - (b.endsWith('.json') ? 1 : 0);
+
+    var changed = false;
+    for (final n in mine.where(retired)) {
+      await local.delete(n);
+      changed = true;
+    }
+    for (final n in remote.where(retired)) {
+      try {
+        await _remote.delete('$dir$n');
+      } on RemoteStoreException catch (e) {
+        if (e.statusCode != 404) rethrow;
+      }
+    }
+
+    final up = mine
+        .where((n) => !retired(n))
+        .toSet()
+        .difference(remote)
+        .toList()
+      ..sort(pdfFirst);
+    if (up.isNotEmpty) {
+      await _ensureDeltaDir(notebookId);
+      try {
+        await _remote.createDirectory(dir);
+      } on RemoteStoreException catch (e) {
+        if (e.statusCode != 405) rethrow;
+      }
+      for (final name in up) {
+        final bytes = await local.read(name);
+        if (bytes != null) await _remote.uploadFile('$dir$name', bytes);
+      }
+    }
+
+    final down = remote
+        .difference(mine)
+        .where((n) =>
+            PdfSourceIndex.isSafeName(n) && !n.endsWith('.tmp') && !retired(n))
+        .toList()
+      ..sort(pdfFirst);
+    for (final name in down) {
+      final bytes = name.endsWith(kGoneSuffix)
+          ? Uint8List(0)
+          : await _remote.downloadFile('$dir$name');
+      await local.writeFile(name, bytes);
+      changed = true;
+    }
+    return changed;
   }
 
   /// Whether [remotePath] is on the server. A backend that can't tell

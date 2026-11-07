@@ -1477,6 +1477,14 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String setExportLibraryProgress(int done, int total) {
+    return '正在导出 $done/$total…';
+  }
+
+  @override
+  String get setExportLibraryCancelled => '已取消导出。';
+
+  @override
   String setTrashPurgeTitle(String title) {
     return '要永久删除“$title”吗？';
   }
@@ -2003,6 +2011,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chromeShapeGuessOff => '自动识别形状 · 关';
+
+  @override
+  String get chromeHoldForOptions => '长按或右键单击查看选项';
 
   @override
   String get chromeLabelPen => '钢笔';

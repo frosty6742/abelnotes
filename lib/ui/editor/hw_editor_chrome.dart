@@ -330,6 +330,8 @@ class HwFloatingDock extends StatelessWidget {
   final DockPosition position;
   final bool shapeGuess;
   final ValueChanged<bool> onShapeGuessChanged;
+  /// Long press or right click on the auto-shape button: its options menu.
+  final void Function(Offset globalPosition)? onShapeGuessSecondary;
   /// Last eraser sub-mode the user picked (per-stroke vs per-area). The
   /// dock's eraser button activates THIS instead of always defaulting
   /// to `eraserStroke`, so going pen → eraser → pen → eraser keeps the
@@ -356,6 +358,7 @@ class HwFloatingDock extends StatelessWidget {
     required this.activeInkColor,
     required this.shapeGuess,
     required this.onShapeGuessChanged,
+    this.onShapeGuessSecondary,
     this.lastEraserMode = CanvasTool.eraserStroke,
     this.position = DockPosition.floating,
     this.onDragStart,
@@ -633,13 +636,25 @@ class HwFloatingDock extends StatelessWidget {
       button: true,
       label: label,
       child: Tooltip(
-        message: label,
+        message: onShapeGuessSecondary == null
+            ? label
+            : '$label\n${l10n.chromeHoldForOptions}',
         waitDuration: const Duration(milliseconds: 400),
+        // A long press opens the options, so touch never shows the tooltip.
+        triggerMode: onShapeGuessSecondary == null
+            ? null
+            : TooltipTriggerMode.manual,
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => onShapeGuessChanged(!shapeGuess),
+            onSecondaryTapDown: onShapeGuessSecondary == null
+                ? null
+                : (d) => onShapeGuessSecondary!(d.globalPosition),
+            onLongPressStart: onShapeGuessSecondary == null
+                ? null
+                : (d) => onShapeGuessSecondary!(d.globalPosition),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 120),
               width: m.btn,
@@ -693,6 +708,8 @@ class HwToolPopup extends StatelessWidget {
   final List<Color> presetColors;
   final EraserSize? eraserSize;
   final ValueChanged<EraserSize>? onEraserSizeChanged;
+  final double? eraserDiameterPt;
+  final ValueChanged<double?>? onEraserDiameterChanged;
   final bool? eraserPerStroke;
   final ValueChanged<bool>? onEraserPerStrokeChanged;
   final VoidCallback onClose;
@@ -719,6 +736,8 @@ class HwToolPopup extends StatelessWidget {
     required this.onClose,
     this.eraserSize,
     this.onEraserSizeChanged,
+    this.eraserDiameterPt,
+    this.onEraserDiameterChanged,
     this.eraserPerStroke,
     this.onEraserPerStrokeChanged,
     this.penPresets,
@@ -959,6 +978,58 @@ class HwToolPopup extends StatelessWidget {
                 ],
               ],
             ),
+            const SizedBox(height: 10),
+            Builder(builder: (context) {
+              final presetDia =
+                  eraserSizeToRadius(eraserSize ?? EraserSize.medium) * 2;
+              final dia = eraserDiameterPt ?? presetDia;
+              final custom = eraserDiameterPt != null;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          l10n.chromeThicknessPx(dia.toStringAsFixed(1)),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: p.ink1,
+                            fontFamily: HwTheme.fontMono,
+                            fontWeight:
+                                custom ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      if (custom)
+                        GestureDetector(
+                          onTap: () => onEraserDiameterChanged?.call(null),
+                          child: Icon(Icons.restart_alt,
+                              size: 16, color: p.ink2),
+                        ),
+                    ],
+                  ),
+                  // Same look as the pen thickness slider.
+                  SliderTheme(
+                    data: SliderThemeData(
+                      trackHeight: 4,
+                      thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 8, elevation: 1),
+                      activeTrackColor: p.ink0,
+                      inactiveTrackColor: p.paper3,
+                      thumbColor: p.ink0,
+                    ),
+                    child: Slider(
+                      value: dia.clamp(1.0, 40.0).toDouble(),
+                      min: 1.0,
+                      max: 40.0,
+                      divisions: 78,
+                      onChanged: (v) => onEraserDiameterChanged?.call(v),
+                    ),
+                  ),
+                ],
+              );
+            }),
           ],
         ],
       ),

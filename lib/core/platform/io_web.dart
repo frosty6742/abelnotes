@@ -99,9 +99,13 @@ class WebFs {
     }).toJS;
     await done.future;
 
-    // Ask the browser not to evict the store under storage pressure.
+    // Ask the browser not to evict the store under storage pressure. Not
+    // awaited: Firefox holds the answer until the user replies to its prompt.
     try {
-      await web.window.navigator.storage.persist().toDart;
+      unawaited(web.window.navigator.storage
+          .persist()
+          .toDart
+          .then((_) {}, onError: (Object _) {}));
     } catch (_) {}
   }
 
@@ -129,6 +133,10 @@ class WebFs {
       tx.onabort = failed.toJS;
       op(tx.objectStore(_store));
       return c.future;
+    }).catchError((Object e) {
+      // A throw here must not poison the chain: every later write would be skipped.
+      persistError.value = '$e';
+      print('[WebFs] IndexedDB write failed: $e');
     });
   }
 
@@ -289,7 +297,10 @@ class File extends FileSystemEntity {
   }
 
   Future<Uint8List> readAsBytes() async => readAsBytesSync();
-  Uint8List readAsBytesSync() => _need().bytes;
+  // Match dart:io's caller-owned read buffer. ZIP entries can be views into
+  // an archive; Flutter's Firefox image-decoder fallback consumes .buffer,
+  // so returning that view would decode the whole ZIP instead of the asset.
+  Uint8List readAsBytesSync() => Uint8List.fromList(_need().bytes);
 
   Future<String> readAsString({Encoding encoding = utf8}) async =>
       readAsStringSync(encoding: encoding);

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:uuid/uuid.dart';
 import 'package:abelnotes/core/platform/device_class.dart';
 import 'package:abelnotes/core/platform/io.dart' as io;
 import 'package:abelnotes/config/app_config.dart';
@@ -21,6 +22,11 @@ import 'package:abelnotes/core/providers/app_settings_provider.dart';
 import 'package:abelnotes/core/providers/auth_provider.dart'
     show webdavServiceProvider, nextcloudShareServiceProvider;
 import 'package:abelnotes/core/providers/canvas_provider.dart';
+import 'package:abelnotes/features/canvas/data/pdf_source_renderer.dart' show pdfSourceBytes;
+import 'package:abelnotes/features/canvas/data/pdf_sources.dart' show PdfSourceIndex;
+import 'package:abelnotes/features/canvas/presentation/pdf_sharpener.dart';
+import 'package:abelnotes/core/providers/offline_providers.dart' show fileServiceProvider;
+import 'package:abelnotes/features/canvas/presentation/pen_contact.dart';
 import 'package:abelnotes/features/canvas/presentation/missing_page_view.dart';
 import 'package:abelnotes/core/providers/cross_notebook_clipboard_provider.dart';
 import 'package:abelnotes/core/providers/pending_import_provider.dart';
@@ -148,6 +154,15 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
   // Override armed but the tip isn't touching: GTK reports a barrel press
   // made while hovering as the pointer-down, before any contact.
   bool _barrelAwaitingContact = false;
+  // Hovering pen's tool hint (eraser radius / lasso badge), canvas-local;
+  // kept out of CanvasState so autosave/sync don't read it as an erase.
+  int? _penHoverPointer;
+  final ValueNotifier<Offset?> _penHoverPos = ValueNotifier<Offset?>(null);
+  _PenHoverHint _penHoverHint = _PenHoverHint.eraser;
+  // Hint comes from a held barrel, not the dock tool.
+  bool _penHoverBarrel = false;
+  // GTK and browsers send a side-button press while hovering as a down.
+  static final bool _downMayPrecedeContact = kIsWeb || io.Platform.isLinux;
 
   // ── New chrome state (warm-paper redesign) ─────────────────────
   bool _popupOpen = false;
@@ -418,7 +433,76 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
     ref.read(canvasProvider.notifier).imageCacheVersion,
     // Math raster fills bump this so the equation appears on the next frame.
     ref.read(canvasProvider.notifier).mathCacheVersion,
+    _pdfTileVersion,
   ]);
+
+  // ── Sharp zoom of imported PDF pages (see pdf_sharpener.dart) ──
+  PdfSharpener? _pdfSharpener;
+  final ValueNotifier<int> _pdfTileVersion = ValueNotifier(0);
+  late final ViewportSettler _pdfSettler = ViewportSettler(_showPdfViewport);
+  ProviderSubscription<Object?>? _pdfNotebookSub;
+  ProviderSubscription<Object?>? _pdfViewportSub;
+
+  void _watchPdfSources() {
+    _pdfNotebookSub = ref.listenManual<String?>(
+      canvasProvider.select((s) => s?.metadata.id),
+      (_, id) => _openPdfSharpener(id),
+      fireImmediately: true,
+    );
+    _pdfViewportSub = ref.listenManual<Object?>(
+      canvasProvider.select((s) =>
+          s == null ? null : (s.zoom, s.panOffset, s.currentPageFileName)),
+      (_, __) => _pdfSettler.poke(),
+    );
+    final notifier = ref.read(canvasProvider.notifier);
+    notifier.imageCacheVersion.addListener(_pdfSettler.poke);
+    notifier.pdfSourcesVersion.addListener(reloadPdfSources);
+  }
+
+  Future<void> _openPdfSharpener(String? id) async {
+    if (id != null && id == _pdfSharpener?.notebookId) return;
+    _pdfSharpener?.version.removeListener(_bumpPdfTiles);
+    _pdfSharpener?.dispose();
+    _pdfSharpener = null;
+    if (id == null) return;
+    final sharpener = PdfSharpener(
+      id,
+      ref.read(fileServiceProvider).notebookStoreDir(id),
+      cacheBytes: pdfTileCacheBytes(defaultTargetPlatform),
+    );
+    _pdfSharpener = sharpener;
+    sharpener.version.addListener(_bumpPdfTiles);
+    await reloadPdfSources();
+  }
+
+  /// Re-reads the notebook's source PDFs, after an import or a sync.
+  Future<void> reloadPdfSources() async {
+    final sharpener = _pdfSharpener;
+    if (sharpener == null) return;
+    await sharpener.reload();
+    if (mounted && identical(_pdfSharpener, sharpener)) _pdfSettler.poke();
+  }
+
+  void _bumpPdfTiles() => _pdfTileVersion.value++;
+
+  void _showPdfViewport() {
+    final sharpener = _pdfSharpener;
+    final s = ref.read(canvasProvider);
+    final size = _lastCanvasSize;
+    if (!mounted || sharpener == null || s == null || size.isEmpty) return;
+    final page = s.currentPage;
+    if (page == null) return;
+    final a = _toPageCoords(Offset.zero, s, size);
+    final b = _toPageCoords(Offset(size.width, size.height), s, size);
+    sharpener.showViewport(
+      page: page,
+      visiblePage: Rect.fromPoints(a, b),
+      screenDensity: s.zoom *
+          _getRenderScale(s, size) *
+          MediaQuery.devicePixelRatioOf(context),
+      decoded: s.imageCache,
+    );
+  }
 
   /// Fixed device-pixel-ratio to rasterize math at — clamped to a crisp
   /// range and NOT multiplied by zoom, so the math cache key is stable
@@ -994,11 +1078,13 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
     webTouchDevice.addListener(_onWebTouchDeviceChanged);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addObserver(this);
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_onGlobalPointerEvent);
     _startAutoSave();
     _watchForPendingImport();
     // Hook the Windows-side pen-button bridge. No-op on other
     // platforms. See PenInputChannel for why this exists.
     _watchForLassoCleared();
+    _watchPdfSources();
     PenInputChannel.register(
       onBarrel: (down) => _onNativeBarrelChange(_NativeBarrel.lower, down),
       onInverted: (down) => _onNativeBarrelChange(_NativeBarrel.upper, down),
@@ -1012,7 +1098,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
     );
     // Linux-only: receive stylus pressure the GTK embedder drops. No-op
     // elsewhere. See LinuxPenPressure / _penPressure.
-    LinuxPenPressure.register();
+    LinuxPenPressure.register(onProximityOut: _clearPenHover);
     // Let the provider's save-prep pause while a stroke is mid-flight.
     // The ActiveStrokeNotifier is screen-local (it bypasses Riverpod for
     // perf), so the provider can't see pen-down state without this probe.
@@ -1600,6 +1686,9 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
     _dockFlyY.dispose();
     _hintMessenger?.hideCurrentSnackBar();
     WidgetsBinding.instance.removeObserver(this);
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(
+      _onGlobalPointerEvent,
+    );
     PenInputChannel.unregister();
     ApplePencilChannel.unregister();
     LinuxPenPressure.unregister();
@@ -1636,12 +1725,23 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
     _longPressTimer?.cancel();
     // Close the manual provider subscriptions opened in initState.
     _lassoClearedSub?.close();
+    _pdfNotebookSub?.close();
+    _pdfViewportSub?.close();
+    try {
+      final notifier = ref.read(canvasProvider.notifier);
+      notifier.imageCacheVersion.removeListener(_pdfSettler.poke);
+      notifier.pdfSourcesVersion.removeListener(reloadPdfSources);
+    } catch (_) {}
+    _pdfSettler.dispose();
+    _pdfSharpener?.dispose();
+    _pdfTileVersion.dispose();
     _pendingImportSub?.close();
     _autoSaveSub?.close();
     _toolChangeSub?.close();
     _focusNode.dispose();
     _pdfTextSelController?.dispose();
     _mouseHoverCursor.dispose();
+    _penHoverPos.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     // Deliberately NOT calling DesktopWindow.setFullScreen(false) here: by
     // the time dispose() runs the native GTK window may already be
@@ -2499,7 +2599,73 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
     return _effectiveStylusOnly() && kind == PointerDeviceKind.touch && _isDrawLikeTool(tool);
   }
 
+  // Out-of-contact pen sample: some Linux stacks send proximity as
+  // PointerMoveEvent without the contact bit instead of PointerHoverEvent.
+  bool _isPenHoverSample(PointerEvent event) {
+    if (event.kind != PointerDeviceKind.stylus &&
+        event.kind != PointerDeviceKind.invertedStylus) {
+      return false;
+    }
+    return event is PointerHoverEvent ||
+        (event is PointerMoveEvent && (event.buttons & kPrimaryButton) == 0);
+  }
+
+  void _updatePenHover(PointerEvent event, CanvasState? state) {
+    // Tip down (a barrel press may have been the pointer-down) or another
+    // device: no hover hint.
+    if (!_isPenHoverSample(event)) {
+      _clearPenHover();
+      return;
+    }
+    final inverted = event.kind == PointerDeviceKind.invertedStylus;
+    final upper = inverted || (event.buttons & kSecondaryStylusButton) != 0;
+    final lower = !inverted && (event.buttons & kPrimaryStylusButton) != 0;
+    final tool = state?.currentTool;
+    final _PenHoverHint? hint = upper
+        ? _PenHoverHint.eraser
+        : lower
+            ? _PenHoverHint.lasso
+            : tool == null
+                ? null
+                : _isEraserTool(tool)
+                    ? _PenHoverHint.eraser
+                    : tool == CanvasTool.lasso
+                        ? _PenHoverHint.lasso
+                        : null;
+    if (hint == null) {
+      _clearPenHover();
+      return;
+    }
+    _penHoverPointer = event.pointer;
+    _penHoverBarrel = upper || lower;
+    _penHoverHint = hint;
+    _penHoverPos.value = _stylusLocalPosition(event);
+  }
+
+  void _clearPenHover() {
+    _penHoverPointer = null;
+    _penHoverBarrel = false;
+    _penHoverPos.value = null;
+  }
+
+  // Hides the hover preview when the pen leaves proximity or the canvas
+  // without a MouseRegion exit (e.g. over the dock).
+  void _onGlobalPointerEvent(PointerEvent event) {
+    if (event.pointer != _penHoverPointer) return;
+    if (event is PointerRemovedEvent) {
+      _clearPenHover();
+      return;
+    }
+    if (!_isPenHoverSample(event)) return;
+    final box = _canvasStackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached ||
+        !(Offset.zero & box.size).contains(box.globalToLocal(event.position))) {
+      _clearPenHover();
+    }
+  }
+
   void _onPointerDown(PointerDownEvent event, CanvasState state, Size canvasSize) {
+    _clearPenHover();
     // Gaomon driverless: barrel-held + tip-contact arrives as a
     // synth mouse event in parallel with the suppressed pen stream.
     // For the lower barrel it's WM_MBUTTONDOWN (kind=mouse,
@@ -2836,7 +3002,8 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
         // Lower barrel → lasso.
         final n = ref.read(canvasProvider.notifier);
         n.setTool(hasUpper ? n.lastEraserMode : CanvasTool.lasso);
-        if ((event.buttons & kPrimaryButton) == 0) {
+        if (!penTipTouches(event.buttons,
+            downMayPrecedeContact: _downMayPrecedeContact)) {
           // Pressed while hovering: switch now, act once the tip touches.
           _barrelAwaitingContact = true;
           return;
@@ -3173,7 +3340,8 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
 
     final isPen = event.kind == PointerDeviceKind.stylus ||
         event.kind == PointerDeviceKind.invertedStylus;
-    final contact = (event.buttons & kPrimaryButton) != 0;
+    final contact = penTipTouches(event.buttons,
+        downMayPrecedeContact: _downMayPrecedeContact);
     if (isPen && _barrelButtonOverride) {
       // While a barrel is held the tip can land and lift without a new
       // pointer-down (GTK): only erase/select while it touches.
@@ -3501,6 +3669,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
     if (_barrelButtonOverride) {
       _barrelButtonOverride = false;
       _barrelAwaitingContact = false;
+      _clearPenHover();
       final notif = ref.read(canvasProvider.notifier);
       final prevTool = _barrelButtonPreviousTool;
       final curTool = ref.read(canvasProvider)?.currentTool;
@@ -3756,6 +3925,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
       if (_barrelButtonOverride) {
         _barrelButtonOverride = false;
         _barrelAwaitingContact = false;
+        _clearPenHover();
         if (_barrelButtonPreviousTool != null) {
           ref.read(canvasProvider.notifier).setTool(_barrelButtonPreviousTool!);
           _barrelButtonPreviousTool = null;
@@ -3776,6 +3946,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
     if (_barrelButtonOverride) {
       _barrelButtonOverride = false;
       _barrelAwaitingContact = false;
+      _clearPenHover();
       if (_barrelButtonPreviousTool != null) {
         ref.read(canvasProvider.notifier).setTool(_barrelButtonPreviousTool!);
         _barrelButtonPreviousTool = null;
@@ -4565,6 +4736,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
       notifier.beginBulkOperation();
       bulkStarted = true;
       int processed = 0;
+      final keptPages = <(String, int)>[];
       final startPage = ref.read(canvasProvider)?.currentPage;
       final startPageW = startPage?.width ?? 595.0;
       final startPageH = startPage?.height ?? 842.0;
@@ -4651,6 +4823,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
           }
         }
 
+        if (assetId != null) keptPages.add((assetId, i));
         processed++;
 
         // Progress feedback for long imports so the user sees we're alive.
@@ -4674,6 +4847,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
 
       notifier.endBulkOperation();
       bulkStarted = false;
+      await _keepPdfSource(doc, keptPages);
       // Decode the current page's images now that bulk import is done.
       // During import we skipped decode to keep GPU pressure bounded;
       // the user is on the last imported page and expects to see it
@@ -4709,6 +4883,39 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
       // Release PDFium's parse of the source PDF. Runs on every exit path
       // (including the `if (!mounted) return` guards inside the loop).
       await doc.dispose();
+    }
+  }
+
+  /// Keeps the source PDF of imported pages so zooming re-renders them sharp.
+  /// Best effort: without it the pages keep their PNG.
+  Future<void> _keepPdfSource(
+      pdfrx.PdfDocument doc, List<(String, int)> kept) async {
+    final sharpener = _pdfSharpener;
+    if (sharpener == null || kept.isEmpty) return;
+    try {
+      final sourcePages = <int>[];
+      final pages = <String, int>{};
+      for (final (asset, page) in kept) {
+        var at = sourcePages.indexOf(page);
+        if (at < 0) {
+          at = sourcePages.length;
+          sourcePages.add(page);
+        }
+        pages[asset] = at;
+      }
+      final bytes = await pdfSourceBytes(doc, sourcePages);
+      final id = const Uuid().v4();
+      await sharpener.store.save(
+          PdfSourceIndex(
+              id: id,
+              pdf: '$id.pdf',
+              pages: pages,
+              createdMs: DateTime.now().millisecondsSinceEpoch),
+          bytes);
+      ref.read(canvasProvider.notifier).notePdfSourcesChanged();
+      await reloadPdfSources();
+    } catch (e) {
+      debugPrint('[Canvas] keeping the source PDF failed: $e');
     }
   }
 
@@ -5022,6 +5229,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
                 notifier.setToolSettings(
                     canvasState.toolSettings.copyWith(shapeRecognition: v));
               },
+              onShapeGuessSecondary: _showShapeGuessMenu,
               onToolChanged: (t, kind) {
                 _noteDockTapDevice(kind);
                 _pickTool(t);
@@ -5236,10 +5444,10 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
                           .map((c) => Color(c))
                           .toList(),
                       eraserSize: canvasState.toolSettings.eraserSize,
-                      onEraserSizeChanged: (s) {
-                        notifier.setToolSettings(
-                            canvasState.toolSettings.copyWith(eraserSize: s));
-                      },
+                      onEraserSizeChanged: (s) => notifier.setEraserSize(s),
+                      eraserDiameterPt: canvasState.toolSettings.eraserDiameterPt,
+                      onEraserDiameterChanged: (pt) =>
+                          notifier.setEraserDiameterPt(pt),
                       eraserPerStroke:
                           canvasState.currentTool == CanvasTool.eraserStroke,
                       onEraserPerStrokeChanged: (perStroke) {
@@ -5432,6 +5640,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
         return ValueListenableBuilder<MouseCursor?>(
           valueListenable: _mouseHoverCursor,
           builder: (context, hoverCursor, child) => MouseRegion(
+            onExit: (_) => _clearPenHover(),
             // Mouse override (selection arrow / I-beam) when set; otherwise the
             // tool default so the pen keeps its drawing crosshair.
             cursor: hoverCursor ?? cursor,
@@ -5481,14 +5690,16 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
                   onPointerMove: (e) {
                     _fingerTaps.move(e);
                     final live = ref.read(canvasProvider) ?? canvasState;
+                    _updatePenHover(e, live);
                     _onPointerMove(e, live, canvasSize);
                   },
                   onPointerHover: (e) {
                     if (!_hoverKindUnreliable) {
                       _lastPointerWasMouse = e.kind == PointerDeviceKind.mouse;
                     }
-                    // Pen/stylus (or no state) → tool default cursor (crosshair).
                     final live = ref.read(canvasProvider);
+                    _updatePenHover(e, live);
+                    // Pen/stylus (or no state) → tool default cursor (crosshair).
                     if (e.kind != PointerDeviceKind.mouse || live == null) {
                       if (_mouseHoverCursor.value != null) {
                         _mouseHoverCursor.value = null;
@@ -5665,6 +5876,9 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
                             return CustomPaint(
                               painter: CanvasRenderEngine(
                                 pageData: livePage,
+                                pdfTilesFor: (asset) =>
+                                    _pdfSharpener?.tilesFor(asset) ?? const [],
+                                pdfTileVersion: () => _pdfTileVersion.value,
                                 // Pass nothing as the snapshot — the painter
                                 // resolves the active stroke via the getter
                                 // every frame so a captured snapshot can
@@ -5838,19 +6052,50 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
                                       tool: s.currentTool,
                                       pos: s.eraserCursorPos,
                                     )));
-                      if (eraserState == null ||
-                          !_isEraserTool(eraserState.tool) ||
-                          eraserState.pos == null) {
+                      if (eraserState == null) {
                         return const SizedBox.shrink();
                       }
                       final fullState = ref.read(canvasProvider);
                       if (fullState == null) {
                         return const SizedBox.shrink();
                       }
-                      return Stack(
-                        children: [
-                          _buildEraserCursor(fullState, canvasSize),
-                        ],
+                      if (eraserState.pos != null &&
+                          _isEraserTool(eraserState.tool)) {
+                        return Stack(
+                          children: [
+                            _buildEraserCursor(
+                              fullState,
+                              _toScreenCoords(
+                                  eraserState.pos!, fullState, canvasSize),
+                              canvasSize,
+                              erasing: true,
+                            ),
+                          ],
+                        );
+                      }
+                      // Drag cursor wins; otherwise the hovering pen's.
+                      return ValueListenableBuilder<Offset?>(
+                        valueListenable: _penHoverPos,
+                        builder: (context, hoverPos, _) {
+                          final lasso = _penHoverHint == _PenHoverHint.lasso;
+                          final toolMatches = lasso
+                              ? eraserState.tool == CanvasTool.lasso
+                              : _isEraserTool(eraserState.tool);
+                          if (hoverPos == null ||
+                              !(toolMatches || _penHoverBarrel)) {
+                            return const SizedBox.shrink();
+                          }
+                          final live = ref.read(canvasProvider) ?? fullState;
+                          return Stack(
+                            children: [
+                              lasso
+                                  ? _buildLassoHoverBadge(hoverPos)
+                                  : _buildEraserCursor(
+                                      live, hoverPos, canvasSize,
+                                      erasing: false),
+                            ],
+                          );
+                        },
                       );
                     },
                   ),
@@ -6204,12 +6449,13 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
   bool _isEraserTool(CanvasTool tool) =>
       tool == CanvasTool.eraserStandard || tool == CanvasTool.eraserStroke;
 
-  Widget _buildEraserCursor(CanvasState state, Size canvasSize) {
+  // Hover: thin outline. Tip down: accent fill, so contact is visible.
+  Widget _buildEraserCursor(CanvasState state, Offset pos, Size canvasSize,
+      {required bool erasing}) {
     final p = HwThemeScope.of(context);
-    final pos = _toScreenCoords(state.eraserCursorPos!, state, canvasSize);
     // Radius is in page units (see _eraseAt): screen size needs the same
     // renderScale × zoom factor _toScreenCoords applies to the position.
-    final r = eraserSizeToRadius(state.toolSettings.eraserSize) *
+    final r = state.toolSettings.eraserRadius *
         _getRenderScale(state, canvasSize) *
         state.zoom;
     return Positioned(
@@ -6219,10 +6465,32 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
           width: r * 2, height: r * 2,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            border: Border.all(color: p.ink2, width: 1.5),
-            color: p.paper0.withValues(alpha: 0.3),
+            border: erasing
+                ? Border.all(color: p.accent, width: 2)
+                : Border.all(color: p.ink3, width: 1),
+            color: erasing
+                ? p.accent.withValues(alpha: HwTheme.alphaMedium)
+                : null,
           ),
         ),
+      ),
+    );
+  }
+
+  // Lasso icon beside a hovering tip: the barrel/tool will select on touch.
+  Widget _buildLassoHoverBadge(Offset pos) {
+    final p = HwThemeScope.of(context);
+    return Positioned(
+      left: pos.dx + 8, top: pos.dy + 8,
+      child: Container(
+        width: 22, height: 22,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: p.paper0,
+          border: Border.all(color: p.ink3, width: 1),
+        ),
+        child: HwIcon('lasso', size: 14, color: p.ink1, strokeWidth: 1.4),
       ),
     );
   }
@@ -7405,7 +7673,7 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
         PopupMenuItem(value: 'export_pdf', child: _MenuRow(Icons.picture_as_pdf_rounded, l10n.csExportPdf, null)),
       ],
     ).then((value) {
-      if (value == null) return;
+      if (value == null || !mounted) return;
       final notifier = ref.read(canvasProvider.notifier);
       switch (value) {
         case 'copy': notifier.copySelection(); _toast(AppLocalizations.of(context).csSelectionCopied); break;
@@ -7931,41 +8199,48 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(l10n.csExportingPages(pages.length))),
         );
-        final dir = await io.Directory.systemTemp.createTemp('handwriter_export');
-        final files = <XFile>[];
-        for (var i = 0; i < pages.length; i++) {
-          final pngBytes = await _renderPageToPng(pages[i], state.imageCache);
-          if (pngBytes == null) continue;
-          final f = io.File(
-              '${dir.path}/${_sanitiseForFilename(state.metadata.title)}_p${i + 1}.png');
-          await f.writeAsBytes(pngBytes, flush: true);
-          files.add(XFile(f.path, mimeType: 'image/png'));
-        }
-        if (files.isNotEmpty) {
-          if (kIsWeb) {
-            // Browser: one download per page.
-            for (final xf in files) {
-              final name = xf.path.split('/').last;
-              await FilePicker.platform
-                  .saveFile(fileName: name, bytes: await xf.readAsBytes());
-            }
-          } else if (io.Platform.isIOS || io.Platform.isMacOS) {
-            await SharePlus.instance.share(
-              ShareParams(
-                files: files,
-                subject: state.metadata.title,
-                sharePositionOrigin: _shareOriginRect(),
-              ),
-            );
-          } else {
-            // Desktop: let user pick folder, save all
-            final savePath = await FilePicker.platform.getDirectoryPath(
-              dialogTitle: l10n.csChooseFolderForImages(files.length),
-            );
-            if (savePath != null) {
-              for (final xf in files) {
-                final name = xf.path.split('/').last.split('\\').last;
-                await io.File('$savePath/$name').writeAsBytes(await xf.readAsBytes());
+        if (kIsWeb) {
+          // XFile on the web reads browser URLs, not our virtual file-system
+          // paths. Download the rendered bytes directly, one file per page.
+          for (var i = 0; i < pages.length; i++) {
+            final bytes = await _renderPageToPng(pages[i], state.imageCache);
+            if (bytes == null) continue;
+            if (!mounted) return;
+            await _saveOrShare(
+                '${_sanitiseForFilename(state.metadata.title)}_p${i + 1}.png',
+                bytes,
+                'image/png');
+          }
+        } else {
+          final dir = await io.Directory.systemTemp.createTemp('handwriter_export');
+          final files = <XFile>[];
+          for (var i = 0; i < pages.length; i++) {
+            final pngBytes = await _renderPageToPng(pages[i], state.imageCache);
+            if (pngBytes == null) continue;
+            final f = io.File(
+                '${dir.path}/${_sanitiseForFilename(state.metadata.title)}_p${i + 1}.png');
+            await f.writeAsBytes(pngBytes, flush: true);
+            files.add(XFile(f.path, mimeType: 'image/png'));
+          }
+          if (files.isNotEmpty) {
+            if (io.Platform.isIOS || io.Platform.isMacOS) {
+              await SharePlus.instance.share(
+                ShareParams(
+                  files: files,
+                  subject: state.metadata.title,
+                  sharePositionOrigin: _shareOriginRect(),
+                ),
+              );
+            } else {
+              // Desktop: let user pick folder, save all
+              final savePath = await FilePicker.platform.getDirectoryPath(
+                dialogTitle: l10n.csChooseFolderForImages(files.length),
+              );
+              if (savePath != null) {
+                for (final xf in files) {
+                  final name = xf.path.split('/').last.split('\\').last;
+                  await io.File('$savePath/$name').writeAsBytes(await xf.readAsBytes());
+                }
               }
             }
           }
@@ -8851,6 +9126,27 @@ class _CanvasScreenState extends ConsumerState<CanvasScreen>
 
   /// Right-click / long-press on a thumbnail in the bottom strip.
   /// Anchored at [pos] (global), shows quick actions on that page.
+  /// Auto-shape options; the same switch as Settings → Fill shapes.
+  void _showShapeGuessMenu(Offset pos) async {
+    final l10n = AppLocalizations.of(context);
+    final fill = ref.read(appSettingsProvider).fillRecognizedShapes;
+    final picked = await showMenu<bool>(
+      context: context,
+      position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx + 1, pos.dy + 1),
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      items: [
+        CheckedPopupMenuItem(
+          value: !fill,
+          checked: fill,
+          child: Text(l10n.setFillShapes),
+        ),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    ref.read(appSettingsProvider.notifier).setFillRecognizedShapes(picked);
+  }
+
   void _showPageStripContextMenu(int pageNumber, Offset pos) async {
     final state = ref.read(canvasProvider);
     if (state == null) return;
@@ -9590,6 +9886,9 @@ class _ShortcutGroup extends StatelessWidget {
 /// barrel override. Mirrors the two `penFlags` bits the C++ runner
 /// reads — see `PenInputChannel` doc comment.
 enum _NativeBarrel { upper, lower }
+
+/// What a hovering pen previews: eraser radius or lasso badge.
+enum _PenHoverHint { eraser, lasso }
 
 // ═══════════════════════════════════════════════════════════════
 //  PDF IMPORT RANGE PICKER

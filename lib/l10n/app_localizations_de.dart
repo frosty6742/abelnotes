@@ -1518,6 +1518,14 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String setExportLibraryProgress(int done, int total) {
+    return 'Export $done von $total…';
+  }
+
+  @override
+  String get setExportLibraryCancelled => 'Export abgebrochen.';
+
+  @override
   String setTrashPurgeTitle(String title) {
     return '„$title“ endgültig löschen?';
   }
@@ -2084,6 +2092,10 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get chromeShapeGuessOff => 'Auto-Form · aus';
+
+  @override
+  String get chromeHoldForOptions =>
+      'Gedrückt halten oder Rechtsklick für Optionen';
 
   @override
   String get chromeLabelPen => 'Stift';

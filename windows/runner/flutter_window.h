@@ -57,16 +57,19 @@ class FlutterWindow : public Win32Window {
   // button is pressed.
   bool last_tip_in_contact_ = false;
   bool pen_gesture_active_ = false;
-  // Upper-barrel latch for Gaomon-class driverless tablets: their
-  // upper side button reports identically to a real tip touch in
-  // `pointerFlags` (FIRSTBUTTON + INCONTACT both set), but with
-  // `pen_info.pressure == 0` — a real tip touch always registers
-  // non-zero pressure (even a feather-light tap reads ~30-150 /
-  // 1024). We latch on the FIRSTBUTTON 0→1 transition when pressure
-  // is zero, hold until FIRSTBUTTON drops, and OR the latch into
-  // `inverted_now` so the existing eraser override path triggers.
+  // Upper-barrel latch for Gaomon-class driverless tablets (FIRSTBUTTON at
+  // pressure 0), ORed into `inverted_now`. Pending until confirmed, see
+  // HandlePenPointerMessage.
   bool last_first_button_pen_ = false;
   bool upper_button_latched_ = false;
+  bool upper_button_pending_ = false;
+  DWORD upper_button_down_ms_ = 0;
+  // Pen-down withheld from the engine while the latch is pending, see
+  // HoldPenDownWhilePending.
+  bool held_down_ = false;
+  UINT32 held_pointer_id_ = 0;
+  WPARAM held_wparam_ = 0;
+  LPARAM held_lparam_ = 0;
   // HWND of the Flutter view child window we subclass to intercept
   // WM_POINTER*. Pointer events on Windows are delivered to the
   // window UNDER the cursor — that's the Flutter renderer child,
@@ -74,6 +77,8 @@ class FlutterWindow : public Win32Window {
   HWND child_hwnd_ = nullptr;
 
   void HandlePenPointerMessage(UINT message, WPARAM wparam);
+  bool HoldPenDownWhilePending(HWND hwnd, UINT message, WPARAM wparam,
+                               LPARAM lparam);
   void NotifyBarrelChange(const std::string& button, bool down);
   void NotifyBarrelPen(const std::string& phase, double x, double y,
                        double pressure);

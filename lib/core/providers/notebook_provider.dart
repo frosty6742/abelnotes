@@ -14,6 +14,7 @@ import 'package:abelnotes/core/providers/canvas_provider.dart' show canvasProvid
 import 'package:abelnotes/core/providers/offline_providers.dart';
 import 'package:abelnotes/core/services/crash_logger.dart';
 import 'package:abelnotes/core/services/file_service.dart';
+import 'package:abelnotes/features/canvas/data/pdf_sources.dart';
 import 'package:abelnotes/core/services/pending_remote_deletes.dart';
 import 'package:abelnotes/core/services/pending_root_uploads.dart';
 import 'package:abelnotes/core/services/search_service.dart';
@@ -1216,6 +1217,9 @@ class NotebookListNotifier
           contents.symbolLibraries.isNotEmpty ? contents.symbolLibraries : null,
     );
     await fileService.saveNotebookFile(newId, package);
+    // Before the root upload packs the store: the copy keeps sharp PDF zoom.
+    await PdfSourceStore(fileService.notebookStoreDir(entry.metadata.id))
+        .copyTo(PdfSourceStore(fileService.notebookStoreDir(newId)));
     await fileService.upsertNotebookMeta(
       id: newId,
       title: title,

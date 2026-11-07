@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:abelnotes/features/canvas/data/pdf_sources.dart' show kPdfSourcesDir;
 import 'package:abelnotes/core/platform/io.dart';
 import 'dart:math' as math;
 
@@ -538,6 +539,14 @@ class FileService {
     if (await symbols.exists()) {
       await addFile('symbols.json', symbols.path);
     }
+    final sourcesDir = Directory(p.join(dir, kPdfSourcesDir));
+    if (await sourcesDir.exists()) {
+      await for (final e in sourcesDir.list()) {
+        if (e is File && !e.path.endsWith('.tmp')) {
+          await addFile(archiveName(e.path), e.path, compress: false);
+        }
+      }
+    }
 
     final encoded = ZipEncoder().encode(archive);
     if (encoded == null) return null;
@@ -586,6 +595,19 @@ class FileService {
       final parent = Directory(p.dirname(out.path));
       if (!await parent.exists()) await parent.create(recursive: true);
       await out.writeAsBytes(f.content as List<int>, flush: false);
+    }
+    // Source PDFs outlive packages that don't carry them (older builds,
+    // packages rebuilt from memory): keep the ones already on disk.
+    final keptSources = Directory(p.join(dir, kPdfSourcesDir));
+    if (await keptSources.exists()) {
+      final into = Directory(p.join(tmpDir, kPdfSourcesDir));
+      await for (final e in keptSources.list()) {
+        if (e is! File || e.path.endsWith('.tmp')) continue;
+        final target = File(p.join(into.path, p.basename(e.path)));
+        if (await target.exists()) continue;
+        await into.create(recursive: true);
+        await e.copy(target.path);
+      }
     }
     // Swap into place: remove any existing store, then rename tmp → final.
     final existing = Directory(dir);

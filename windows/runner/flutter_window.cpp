@@ -22,6 +22,9 @@ constexpr UINT kTabletQuerySystemGestureStatus = 0x02CC;
 // PENBARRELFEEDBACK | FLICKS.
 constexpr DWORD_PTR kDisablePenFeedback =
     0x00000001 | 0x00000008 | 0x00000010 | 0x00010000;
+// How long a FIRSTBUTTON press must stay at pressure 0 to count as the
+// upper side button rather than a light tip touch.
+constexpr DWORD kUpperButtonConfirmMs = 30;
 }  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -33,6 +36,7 @@ bool FlutterWindow::OnCreate() {
   if (!Win32Window::OnCreate()) {
     return false;
   }
+
 
   // Marks this window for app_ipc::FindExistingMainWindow. Set before the
   // engine is built — that's the slow part, and a second instance launched
@@ -158,6 +162,9 @@ LRESULT CALLBACK FlutterWindow::ChildSubclassProc(HWND hwnd, UINT msg,
       case WM_POINTERUPDATE:
       case WM_POINTERUP:
         self->HandlePenPointerMessage(msg, wparam);
+        if (self->HoldPenDownWhilePending(hwnd, msg, wparam, lparam)) {
+          return 0;
+        }
         break;
       default:
         break;
@@ -234,6 +241,34 @@ void FlutterWindow::SurfaceWindow() {
   ::SetForegroundWindow(handle);
 }
 
+// A pen-down that may be the upper button is kept from the engine until the
+// latch decides. A tip gets it replayed. The button never does: the engine
+// would start a stroke at the button press and erase while hovering, so it
+// only sees hover moves and the eraser runs through NotifyBarrelPen, which
+// waits for real tip pressure.
+bool FlutterWindow::HoldPenDownWhilePending(HWND hwnd, UINT message,
+                                            WPARAM wparam, LPARAM lparam) {
+  const UINT32 pointer_id = GET_POINTERID_WPARAM(wparam);
+  if (upper_button_pending_) {
+    if (message == WM_POINTERDOWN && !held_down_) {
+      held_down_ = true;
+      held_pointer_id_ = pointer_id;
+      held_wparam_ = wparam;
+      held_lparam_ = lparam;
+      return true;
+    }
+    // Moves pass: with no down the engine reports them as hover.
+    return false;
+  }
+  if (held_down_ && pointer_id == held_pointer_id_) {
+    held_down_ = false;
+    if (!upper_button_latched_) {
+      DefSubclassProc(hwnd, WM_POINTERDOWN, held_wparam_, held_lparam_);
+    }
+  }
+  return false;
+}
+
 void FlutterWindow::HandlePenPointerMessage(UINT message, WPARAM wparam) {
   if (!pen_channel_) return;
 
@@ -258,29 +293,37 @@ void FlutterWindow::HandlePenPointerMessage(UINT message, WPARAM wparam) {
       (pen_info.pointerInfo.pointerFlags & POINTER_FLAG_FIRSTBUTTON) != 0;
   last_pen_pointer_id_ = pointer_id;
 
-  // Latch the Gaomon-driverless upper-barrel state via the
-  // pressure-zero signature. On this hardware the upper side button
-  // reports identically to a real tip touch in `pointerFlags`:
-  // FIRSTBUTTON + INCONTACT + INRANGE + DOWN all set, same
-  // ButtonChangeType (FIRSTBUTTON_DOWN). The ONLY distinguishing
-  // field is `pressure` — a physical tip touch always registers
-  // non-zero (even the lightest tap reads ~30-150 out of 1024)
-  // because the pen has a pressure sensor, while the upper button
-  // is a discrete switch with no sensor and reports pressure=0.
-  // We latch on the FIRSTBUTTON 0→1 transition when pressure is
-  // exactly 0, and keep the latch alive until FIRSTBUTTON drops —
-  // so the override survives the user touching the tip mid-gesture
-  // (pressure rises to >0 then, but the latch stays on).
+  // Gaomon-driverless upper side button: same flags as a tip touch but
+  // pressure 0. A real tip can also open at pressure 0 for a report or two
+  // (Huion, #26), so the button counts only once pressure has stayed 0 for
+  // kUpperButtonConfirmMs; the latch then holds until FIRSTBUTTON drops.
+  // A pen without pressure reports 0 on every touch, so the rule needs it.
+  const bool has_pressure = (pen_info.penMask & PEN_MASK_PRESSURE) != 0;
+  const DWORD now_ms = pen_info.pointerInfo.dwTime != 0
+                           ? pen_info.pointerInfo.dwTime
+                           : GetTickCount();
   if (first_button_pen && !last_first_button_pen_) {
-    upper_button_latched_ = (pen_info.pressure == 0);
-  }
-  if (!first_button_pen) {
     upper_button_latched_ = false;
+    upper_button_pending_ = has_pressure && pen_info.pressure == 0;
+    upper_button_down_ms_ = now_ms;
+  } else if (!first_button_pen) {
+    upper_button_latched_ = false;
+    upper_button_pending_ = false;
+  } else if (upper_button_pending_) {
+    // Elapsed time first: a tip touched after a long button hold with no
+    // reports in between is still the button.
+    if (now_ms - upper_button_down_ms_ >= kUpperButtonConfirmMs) {
+      upper_button_latched_ = true;
+      upper_button_pending_ = false;
+    } else if (pen_info.pressure > 0) {
+      upper_button_pending_ = false;
+    }
   }
   last_first_button_pen_ = first_button_pen;
 
   const bool inverted_now =
       ((pen_info.penFlags & PEN_FLAG_INVERTED) != 0) || upper_button_latched_;
+
 
   // Gate the pen-gesture flow on REAL tip contact (INCONTACT bit AND
   // non-zero pressure), not the bit alone. The Gaomon driverless
@@ -289,8 +332,9 @@ void FlutterWindow::HandlePenPointerMessage(UINT message, WPARAM wparam) {
   // at the cursor the moment the user presses the upper barrel —
   // even before they bring the pen down. Pressure>0 ensures we only
   // fire bridge-pen events when the user is genuinely drawing on the
-  // surface.
-  const bool real_tip_contact = tip_in_contact && (pen_info.pressure > 0);
+  // surface. Without pressure the bit is all there is.
+  const bool real_tip_contact =
+      tip_in_contact && (!has_pressure || pen_info.pressure > 0);
 
   // Compute current logical client coordinates once — used for any
   // pen-gesture phase we forward below.

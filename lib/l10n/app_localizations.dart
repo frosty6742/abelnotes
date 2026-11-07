@@ -2550,6 +2550,18 @@ abstract class AppLocalizations {
   /// **'Esportazione fallita: {error}'**
   String setExportLibraryFailed(String error);
 
+  /// No description provided for @setExportLibraryProgress.
+  ///
+  /// In it, this message translates to:
+  /// **'Esportazione {done} di {total}…'**
+  String setExportLibraryProgress(int done, int total);
+
+  /// No description provided for @setExportLibraryCancelled.
+  ///
+  /// In it, this message translates to:
+  /// **'Esportazione annullata.'**
+  String get setExportLibraryCancelled;
+
   /// No description provided for @setTrashPurgeTitle.
   ///
   /// In it, this message translates to:
@@ -3443,6 +3455,12 @@ abstract class AppLocalizations {
   /// In it, this message translates to:
   /// **'Auto-forma · spento'**
   String get chromeShapeGuessOff;
+
+  /// No description provided for @chromeHoldForOptions.
+  ///
+  /// In it, this message translates to:
+  /// **'Tieni premuto o clic destro per le opzioni'**
+  String get chromeHoldForOptions;
 
   /// No description provided for @chromeLabelPen.
   ///
