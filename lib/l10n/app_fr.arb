@@ -35,6 +35,16 @@
   "csClose": "Fermer",
   "csUnsavedChangesTitle": "Modifications non enregistrées",
   "csUnsavedChangesBody": "Voulez-vous enregistrer avant de quitter ?",
+  "csLocalSaveFailed": "Impossible d'enregistrer sur cet appareil. Nouvel essai automatique — ne fermez pas l'app.",
+  "csLocalSaveFailedNoSpace": "Plus d'espace sur cet appareil : vos dernières modifications ne sont pas enregistrées. Libérez de l'espace, l'enregistrement réessaie tout seul.",
+  "csUnsavedLocalBody": "Vos dernières modifications ne sont pas enregistrées sur cet appareil. En partant maintenant, vous les perdez.",
+  "csPreviewBanner": "Aperçu de « {name} » : absent de votre bibliothèque, rien n'est enregistré.",
+  "csPreviewBannerOwned": "Aperçu de « {name} » : une copie est déjà dans votre bibliothèque, rien n'est enregistré ici.",
+  "csPreviewAdd": "Ajouter à la bibliothèque",
+  "csPreviewAddCopy": "Ajouter comme copie",
+  "csPreviewOpenMine": "Ouvrir ma copie",
+  "libOpenAfterClose": "Fermez le carnet ouvert pour voir « {name} ».",
+  "csRetrySave": "Réessayer",
   "csDiscard": "Ne pas enregistrer",
   "csCancel": "Annuler",
   "csSave": "Enregistrer",
@@ -1010,5 +1020,7 @@
   "pgtToastDestUnavailable": "Ce carnet ne peut pas être modifié pour le moment. Rien n'a été modifié.",
   "pgtToastSourceFailed": "Les pages ont été ajoutées, mais n'ont pas pu être retirées de {notebook}. Elles sont dans les deux carnets ; le plateau est maintenant une copie.",
   "pgtToastMoveResumed": "{count, plural, one{Le déplacement interrompu de 1 page a été terminé.} other{Le déplacement interrompu de {count} pages a été terminé.}}",
-  "pgtToastUndoFailed": "Impossible d'annuler. Vérifiez les deux carnets."
+  "pgtToastUndoFailed": "Impossible d'annuler. Vérifiez les deux carnets.",
+  "csTapUndone": "Annulé",
+  "csTapRedone": "Rétabli"
 }

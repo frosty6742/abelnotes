@@ -35,6 +35,16 @@
   "csClose": "Cerrar",
   "csUnsavedChangesTitle": "Cambios sin guardar",
   "csUnsavedChangesBody": "¿Quieres guardar antes de salir?",
+  "csLocalSaveFailed": "No se puede guardar en este dispositivo. Se reintenta solo: no cierres la app.",
+  "csLocalSaveFailedNoSpace": "Este dispositivo no tiene espacio: tus últimos cambios no están guardados. Libera espacio; el guardado se reintenta solo.",
+  "csUnsavedLocalBody": "Tus últimos cambios no están guardados en este dispositivo. Si sales ahora, los pierdes.",
+  "csPreviewBanner": "Vista previa de «{name}»: no está en tu biblioteca y no se guarda nada.",
+  "csPreviewBannerOwned": "Vista previa de «{name}»: ya tienes una copia en tu biblioteca; aquí no se guarda nada.",
+  "csPreviewAdd": "Añadir a la biblioteca",
+  "csPreviewAddCopy": "Añadir como copia",
+  "csPreviewOpenMine": "Abrir mi copia",
+  "libOpenAfterClose": "Cierra el cuaderno abierto para ver «{name}».",
+  "csRetrySave": "Reintentar",
   "csDiscard": "Descartar",
   "csCancel": "Cancelar",
   "csSave": "Guardar",
@@ -1010,5 +1020,7 @@
   "pgtToastDestUnavailable": "Ese cuaderno no se puede editar ahora. No se cambió nada.",
   "pgtToastSourceFailed": "Las páginas se añadieron, pero no se pudieron quitar de {notebook}. Están en ambos cuadernos; la bandeja ahora es una copia.",
   "pgtToastMoveResumed": "{count, plural, one{Se completó el movimiento interrumpido de 1 página.} other{Se completó el movimiento interrumpido de {count} páginas.}}",
-  "pgtToastUndoFailed": "No se pudo deshacer. Revisa ambos cuadernos."
+  "pgtToastUndoFailed": "No se pudo deshacer. Revisa ambos cuadernos.",
+  "csTapUndone": "Deshecho",
+  "csTapRedone": "Rehecho"
 }
