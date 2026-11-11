@@ -2130,6 +2130,12 @@ class AppLocalizationsIt extends AppLocalizations {
   String get chromeShapeGuessOff => 'Auto-forma · spento';
 
   @override
+  String get chromeFillShapesOn => 'Riempi le forme · attivo';
+
+  @override
+  String get chromeFillShapesOff => 'Riempi le forme · spento';
+
+  @override
   String get chromeHoldForOptions =>
       'Tieni premuto o clic destro per le opzioni';
 
