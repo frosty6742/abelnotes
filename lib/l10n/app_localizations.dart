@@ -3432,6 +3432,18 @@ abstract class AppLocalizations {
   /// **'Aggiungi pagina'**
   String get chromeAddPage;
 
+  /// No description provided for @chromePrevPage.
+  ///
+  /// In it, this message translates to:
+  /// **'Pagina precedente'**
+  String get chromePrevPage;
+
+  /// No description provided for @chromeNextPage.
+  ///
+  /// In it, this message translates to:
+  /// **'Pagina successiva'**
+  String get chromeNextPage;
+
   /// No description provided for @chromeSymbols.
   ///
   /// In it, this message translates to:

@@ -2088,6 +2088,12 @@ class AppLocalizationsFr extends AppLocalizations {
   String get chromeAddPage => 'Ajouter une page';
 
   @override
+  String get chromePrevPage => 'Page précédente';
+
+  @override
+  String get chromeNextPage => 'Page suivante';
+
+  @override
   String get chromeSymbols => 'Symboles';
 
   @override

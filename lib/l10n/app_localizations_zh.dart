@@ -2007,6 +2007,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chromeAddPage => '添加页面';
 
   @override
+  String get chromePrevPage => '上一页';
+
+  @override
+  String get chromeNextPage => '下一页';
+
+  @override
   String get chromeSymbols => '符号';
 
   @override
